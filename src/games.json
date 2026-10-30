@@ -1,0 +1,93 @@
+[
+  {
+    "id": "RMCE01",
+    "title": "Mario Kart Wii",
+    "system": "wii-classic",
+    "folder": "Wii",
+    "filename": "Mario Kart Wii (USA) (En,Fr,Es).rvz"
+  },
+  {
+    "id": "CLJE",
+    "title": "Mario & Luigi - Bowser's Inside Story",
+    "system": "ds",
+    "folder": "DS",
+    "filename": "Mario & Luigi - Bowser's Inside Story (USA) (En,Fr,Es).nds"
+  },
+  {
+    "id": "RM8E01",
+    "title": "Mario Party 8",
+    "system": "wii-nunchuk",
+    "folder": "Wii",
+    "filename": "Mario Party 8 (USA) (Rev 1).rvz"
+  },
+  {
+    "id": "R4QE01",
+    "title": "Mario Strikers Charged",
+    "system": "wii-nunchuk",
+    "folder": "Wii",
+    "filename": "Mario Strikers Charged (USA) (En,Fr,Es) (Rev 1).rvz"
+  },
+  {
+    "id": "SMNE01",
+    "title": "New Super Mario Bros. Wii",
+    "system": "wii-sideways",
+    "folder": "Wii",
+    "filename": "New Super Mario Bros. Wii (USA) (En,Fr,Es) (Rev 1).rvz"
+  },
+  {
+    "id": "SOJE41",
+    "title": "Rayman Origins",
+    "system": "wii-classic",
+    "folder": "Wii",
+    "filename": "Rayman Origins (USA) (En,Fr,Es).rvz"
+  },
+  {
+    "id": "SNCP8P",
+    "title": "Sonic Colours",
+    "system": "wii-classic",
+    "folder": "Wii",
+    "filename": "Sonic Colours (Europe) (En,Ja,Fr,De,Es,It).rvz"
+  },
+  {
+    "id": "RSVE8P",
+    "title": "Sonic Unleashed",
+    "system": "wii-classic",
+    "folder": "Wii",
+    "filename": "Sonic Unleashed (USA) (En,Ja,Fr,De,Es,It).rvz"
+  },
+  {
+    "id": "ASME",
+    "title": "Super Mario 64 DS",
+    "system": "ds",
+    "folder": "DS",
+    "filename": "Super Mario 64 DS (USA).nds"
+  },
+  {
+    "id": "RMGE01",
+    "title": "Super Mario Galaxy",
+    "system": "wii-nunchuk",
+    "folder": "Wii",
+    "filename": "Super Mario Galaxy (USA) (En,Fr,Es).rvz"
+  },
+  {
+    "id": "SB4E01",
+    "title": "Super Mario Galaxy 2",
+    "system": "wii-nunchuk",
+    "folder": "Wii",
+    "filename": "Super Mario Galaxy 2 (USA) (En,Fr,Es).rvz"
+  },
+  {
+    "id": "R8PE01",
+    "title": "Super Paper Mario",
+    "system": "wii-sideways",
+    "folder": "Wii",
+    "filename": "Super Paper Mario (USA) (Rev 1).rvz"
+  },
+  {
+    "id": "RSBE01",
+    "title": "Super Smash Bros. Brawl",
+    "system": "wii-classic",
+    "folder": "Wii",
+    "filename": "Super Smash Bros. Brawl (USA) (Rev 1).rvz"
+  }
+]

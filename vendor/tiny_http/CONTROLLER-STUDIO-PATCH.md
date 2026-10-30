@@ -1,0 +1,1 @@
+Based on official crates.io tiny_http 0.12.0. The only functional patch applies one-second read/write timeouts to accepted TCP streams. Controller Studio additionally bounds total JSON body read time. The listening socket has no timeout.
