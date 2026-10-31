@@ -41,7 +41,15 @@ Dolphin loads each game's profile automatically. Mario Kart Wii and Brawl use Cl
 
 Launch DS games with **Launch game** in Studio to use their custom layout. Opening melonDS directly uses the shared layout. DS uses the lowest numbered connected player, then keyboard and mouse if no controller is connected.
 
-Dolphin starts fullscreen. melonDS starts fullscreen and fits both screens without stretching; F11 toggles fullscreen. Keyboard bindings and mouse touchscreen controls are kept.
+Dolphin starts fullscreen. melonDS has a screen-layout selector: one large screen, a large top screen with a small touchscreen, or both screens side by side. Tab swaps screens and F11 toggles fullscreen. Mario 64 DS defaults to one large screen; Bowser's Inside Story keeps both visible. Keyboard bindings and mouse touchscreen controls are kept.
+
+The paired diagrams show the emulated controller on the left and your real controller on the right. Green means assigned. Select either side to highlight matching controls in gold; selecting a button does not remap it. Use the binding selector or press-to-assign to change it.
+
+Studio follows a recognized game in Dolphin or melonDS's X11 window title. The active-game card shows what it detected. Unknown titles and multiple games stay explicit; choose a game manually when detection is unavailable. Turn off **Follow the active game** to browse layouts yourself. Game detection needs `xprop` and an X11 session. It does not read game memory or guess from an old command line. The game catalog, controls and last detected game stay available offline.
+
+Saved changes wait until the whole emulator exits, including Dolphin's game-list window. A centered dialog explains this and changes to **Successful** only after the matching saved revision applies. Queued manual changes survive restarting Studio, even with auto-apply off. File errors stay errors and can be retried with **Use these controls**.
+
+For New Super Mario Bros. Wii: Xbox A jumps (Wii 2), X runs (Wii 1), B bubbles (Wii A), LT maps Wii B, RB shakes, and the right stick tilts. Keyboard: X jump, Z run, C bubble/A, V B, Space shake, Q/E tilt left/right, R/F tilt forward/back, arrows move, Enter pause. Existing custom shake/tilt mappings are kept during the old-preset upgrade.
 
 The current game list is in `src/games.json`. It contains 11 Wii games and 2 DS games and expects matching files under `~/Games/Nintendo/Wii` and `~/Games/Nintendo/DS`. No games, BIOS files or keys are included or downloaded.
 
@@ -51,7 +59,7 @@ DS game launches support standard DS mode with built-in BIOS. Save paths must be
 
 Two Xbox One USB controllers were tested on the original laptop. PlayStation and Switch handling is implemented, but physical controllers were not available to test. USB roles stay with the port when a controller has no unique serial. Bluetooth roles use the paired device identity when available.
 
-DS and 3DS are single-player per instance. Touchscreens, microphones and Wii motion controls may still need the keyboard or mouse. Game compatibility and speed depend on your hardware and emulator settings. The latest DS input/scaling and fullscreen changes still need a native gameplay retest.
+DS and 3DS are single-player per instance. Touchscreens, microphones and Wii motion controls may still need the keyboard or mouse. Game compatibility and speed depend on your hardware and emulator settings. Native gameplay still needs a retest after a controller or display change. X11 fixture tests verify game switching and queued saves; they do not prove game compatibility or native graphics performance.
 
 ## Backups
 
@@ -72,3 +80,7 @@ node --test tests/input.test.mjs tests/ports.test.mjs
 `--inspect` lists controllers. `--export-plan --home PATH` prints proposed config files without writing them. `--apply-once --home PATH` applies to a test home. An alternate home shows a preview badge. `--background` starts without opening a browser.
 
 The 3D renderer and web UI are bundled. SDL2 is loaded at runtime, so SDL development headers are not needed to compile. Third-party licenses are included under `vendor/`.
+
+## Mario 64 DS widescreen
+
+The widescreen patch requires USA Rev 1 / v1.1. Studio prefers the separately verified `Super Mario 64 DS (USA) (Rev 1) (Widescreen).nds` copy when present and checks its SHA-256 before launching. The original games stay intact. Launch it through Studio or the dedicated widescreen shortcut to use the 16:9 game config. See [patch notes](docs/widescreen.md) for the source and checks.

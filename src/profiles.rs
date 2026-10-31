@@ -163,6 +163,43 @@ pub fn ds_keyboard_profile(text: &str) -> Result<String, String> {
     }
     ds_config_patch(text, &values, -1)
 }
+pub fn ds_display_profile(text: &str, display: &str) -> Result<String, String> {
+    let (layout, sizing) = match display {
+        "dual" => (2, 0),
+        "focus" => (2, 1),
+        "top" => (0, 4),
+        _ => return Err("Unknown DS display layout".into()),
+    };
+    let mut v: toml::Value =
+        toml::from_str(text).map_err(|e| format!("Invalid melonDS TOML: {e}"))?;
+    for (path, entries) in [
+        (
+            "Instance0.Window0",
+            vec![
+                ("ScreenLayout", layout),
+                ("ScreenSizing", sizing),
+                ("ScreenGap", 0),
+            ],
+        ),
+        ("Instance0.Keyboard", vec![("HK_SwapScreens", 16777217)]),
+    ] {
+        let mut table = &mut v;
+        for part in path.split('.') {
+            table = table
+                .as_table_mut()
+                .ok_or("Invalid DS display table")?
+                .entry(part)
+                .or_insert_with(|| toml::Value::Table(Default::default()));
+        }
+        for (k, n) in entries {
+            table
+                .as_table_mut()
+                .ok_or("Invalid DS display table")?
+                .insert(k.into(), toml::Value::Integer(n));
+        }
+    }
+    toml::to_string_pretty(&v).map_err(|e| e.to_string())
+}
 fn ds_profile(text: &str, d: &Device, bindings: &Bindings) -> Result<String, String> {
     let mut values = Bindings::new();
     for action in model::actions("ds") {
@@ -188,8 +225,6 @@ fn ds_config_patch(text: &str, values: &Bindings, index: i64) -> Result<String, 
                 ("IntegerScaling".into(), "false".into()),
                 ("ScreenLayout".into(), "0".into()),
                 ("ScreenSizing".into(), "0".into()),
-                ("ScreenAspectTop".into(), "0".into()),
-                ("ScreenAspectBot".into(), "0".into()),
             ]
             .into(),
         ),
@@ -347,6 +382,14 @@ pub fn build(home: &Path, devices: &[Device], settings: &Settings) -> Result<Pla
     }
     if let Some(text) = storage::read(home, DS)? {
         let updated = ds_profile(&text, first, &settings.bindings(first, "ds"))?;
+        let updated = ds_display_profile(
+            &updated,
+            settings
+                .ds_display
+                .get("shared")
+                .map(String::as_str)
+                .unwrap_or("focus"),
+        )?;
         add(
             &mut plan,
             home,
@@ -358,6 +401,14 @@ pub fn build(home: &Path, devices: &[Device], settings: &Settings) -> Result<Pla
             let path = crate::games::ds_config(&game.id)?;
             let original = storage::read(home, &path)?.unwrap_or_else(|| text.clone());
             let updated = ds_profile(&original, first, &settings.game_bindings(first, &game.id)?)?;
+            let updated = ds_display_profile(
+                &updated,
+                settings
+                    .ds_display
+                    .get(&game.id)
+                    .map(String::as_str)
+                    .unwrap_or(if game.id == "ASME" { "top" } else { "dual" }),
+            )?;
             add(
                 &mut plan,
                 home,
@@ -437,6 +488,11 @@ pub fn build(home: &Path, devices: &[Device], settings: &Settings) -> Result<Pla
         let mut global = storage::read(home, &format!("{DOL}Dolphin.ini"))?.unwrap_or_default();
         global = patch_ini(
             &global,
+            "Interface",
+            &[("ShowActiveTitle".into(), "True".into())].into(),
+        );
+        global = patch_ini(
+            &global,
             "Display",
             &[
                 ("Fullscreen".into(), "True".into()),
@@ -496,6 +552,33 @@ pub fn build(home: &Path, devices: &[Device], settings: &Settings) -> Result<Pla
             for sys in ["gamecube", "wii-nunchuk", "wii-sideways", "wii-classic"] {
                 let b = settings.bindings(d, sys);
                 let mut v = dolphin_profile(d, &b, sys, ordinal);
+                if player == 1 && sys == "wii-sideways" {
+                    for (action, key) in [
+                        ("Buttons/A", "C"),
+                        ("Buttons/B", "V"),
+                        ("Buttons/1", "Z"),
+                        ("Buttons/2", "X"),
+                        ("Buttons/+", "Return"),
+                        ("Buttons/-", "BackSpace"),
+                        ("Buttons/Home", "Home"),
+                        ("D-Pad/Up", "Up"),
+                        ("D-Pad/Down", "Down"),
+                        ("D-Pad/Left", "Left"),
+                        ("D-Pad/Right", "Right"),
+                        ("Shake/X", "space"),
+                        ("Shake/Y", "space"),
+                        ("Shake/Z", "space"),
+                        ("Tilt/Left", "Q"),
+                        ("Tilt/Right", "E"),
+                        ("Tilt/Forward", "R"),
+                        ("Tilt/Backward", "F"),
+                    ] {
+                        if let Some(binding) = v.get_mut(action) {
+                            *binding =
+                                format!("{binding} | `XInput2/0/Virtual core pointer:{key}`");
+                        }
+                    }
+                }
                 if player == 1 && sys == "wii-classic" {
                     for (action, key) in [
                         ("Buttons/A", "X"),

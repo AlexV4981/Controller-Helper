@@ -1,3 +1,17 @@
+## 0.3.2
+
+Clarify that melonDS can be open without exposing its loaded game to Studio. Keep direct play on shared controls and describe isolated DS launches as optional. Stop claiming a detected title proves which controls are active. Automatic DS game identification and dynamic library scanning remain unfinished.
+
+Set the DS per-game configuration directory inside the Flatpak sandbox so the selected screen layout and controls actually take effect.
+
+## 0.3.1
+
+Preserve DS game aspect settings when applying controllers. Prefer the separately verified Mario 64 DS USA Rev 1 widescreen copy without replacing the original game. Verify the patched ROM hash before launch.
+
+## 0.3.0
+
+Add linked emulated/physical controller diagrams and X11 active-game following. Keep per-game drafts separate during game switches. Persist queued saves and acknowledge their applied revisions before showing success. Separate file errors from emulator-running waits. Add large DS screen layouts and fix overlapping sideways jump/bubble controls, missing B and keyboard alternatives. Leave the incompatible Mario 64 DS widescreen patch unapplied.
+
 ## 0.2.0
 
 Add isolated per-game controller layouts, shared fallback/inheritance, and guarded game launch for the imported Wii/DS library. DS uses original SDL joystick indexes and highest saved player priority, corrects trigger/inverted-axis bindings, enables scalable OpenGL presentation, and adds F11/fullscreen launch. Dolphin starts fullscreen. Harden game paths, TOML validation, configuration startup gating, and asynchronous editor drafts.

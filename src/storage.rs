@@ -185,15 +185,54 @@ pub fn save_settings(home: &Path, settings: &crate::model::Settings) -> Result<(
         &serde_json::to_vec_pretty(settings).map_err(|e| e.to_string())?,
     )
 }
+fn upgrade_sideways(b: &mut crate::model::Bindings) {
+    if !b.contains_key("B") {
+        b.insert("B".into(), "lt".into());
+        if b.get("A").map(String::as_str) == Some("south")
+            && b.get("2").map(String::as_str) == Some("south")
+        {
+            b.insert("A".into(), "east".into());
+        }
+    }
+}
 pub fn load_settings(home: &Path) -> Result<crate::model::Settings, String> {
     match read(home, &format!("{STATE}/preferences.json"))? {
         Some(s) => {
-            let v: crate::model::Settings = serde_json::from_str(&s)
+            let mut v: crate::model::Settings = serde_json::from_str(&s)
                 .map_err(|e| format!("Saved preferences could not be read: {e}"))?;
+            if v.applied_revision > v.desired_revision || v.desired_revision > 9_007_199_254_740_990
+            {
+                return Err("Invalid settings revision".into());
+            }
+            if v.pending_apply && v.desired_revision == v.applied_revision {
+                v.desired_revision += 1;
+            }
             if v.schema != 1 {
                 return Err("Unsupported preference version".into());
             }
-            for p in v.devices.values() {
+            if let Some(id) = &v.last_game {
+                crate::games::find(id)?;
+            }
+            for (id, display) in &v.ds_display {
+                if id != "shared" && crate::games::find(id)?.system != "ds" {
+                    return Err("Not a DS display profile".into());
+                }
+                if !["dual", "focus", "top"].contains(&display.as_str()) {
+                    return Err("Unknown DS display layout".into());
+                }
+            }
+            for p in v.devices.values_mut() {
+                for (sys, b) in &mut p.mappings {
+                    if sys == "wii-sideways" {
+                        upgrade_sideways(b);
+                    }
+                }
+                for (id, layout) in &mut p.games {
+                    if crate::games::find(id)?.system == "wii-sideways" {
+                        upgrade_sideways(&mut layout.bindings);
+                    }
+                }
+
                 if p.games.len() > crate::games::catalog().len() {
                     return Err("Too many saved game layouts".into());
                 }

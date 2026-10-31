@@ -28,6 +28,8 @@ struct Update {
     game: Option<String>,
     #[serde(default)]
     inherit: bool,
+    #[serde(default)]
+    display: Option<String>,
 }
 fn header(request: &Request, name: &'static str) -> Option<String> {
     request
@@ -244,7 +246,21 @@ fn run() -> Result<(), String> {
     let mut devices = initial;
     let mut last = fingerprint(&devices, &settings);
     let mut pending = true;
-    let mut pending_manual = false;
+    let mut pending_manual = settings.pending_apply;
+    let mut apply_error = false;
+    let (runtime_tx, runtime_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        loop {
+            if runtime_tx
+                .send(controller_studio::runtime::detect())
+                .is_err()
+            {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    });
+    let mut runtime = controller_studio::runtime::Runtime::default();
     let mut changed = Instant::now();
     let mut last_check = Instant::now();
     let mut saved_message = "Ready to set up your controllers".to_owned();
@@ -253,6 +269,13 @@ fn run() -> Result<(), String> {
     let mut game_child: Option<std::process::Child> = None;
     let mut launch_status = String::new();
     loop {
+        for sample in runtime_rx.try_iter() {
+            if sample.game.is_some() && sample.game != settings.last_game {
+                settings.last_game = sample.game.clone();
+                let _ = storage::save_settings(&home, &settings);
+            }
+            runtime = sample;
+        }
         if let Some(child) = game_child.as_mut()
             && let Some(status) = child.try_wait().map_err(|e| e.to_string())?
         {
@@ -295,6 +318,8 @@ fn run() -> Result<(), String> {
         if pending
             && game_child.is_none()
             && (settings.auto_apply || pending_manual)
+            && !apply_error
+            && storage::running_emulators().is_empty()
             && !devices.is_empty()
             && changed.elapsed() > Duration::from_secs(2)
         {
@@ -316,10 +341,14 @@ fn run() -> Result<(), String> {
                     last_receipt = Some(r);
                     pending = false;
                     pending_manual = false;
+                    settings.pending_apply = false;
+                    settings.applied_revision = settings.desired_revision;
+                    last = fingerprint(&devices, &settings);
                     let _ = storage::save_settings(&home, &settings);
                 }
                 Err(e) => {
                     saved_message = e;
+                    apply_error = true;
                     changed = Instant::now();
                 }
             }
@@ -352,6 +381,10 @@ fn run() -> Result<(), String> {
                 )),
                 "/app.js" => Some((
                     include_bytes!("../web/app.js").as_slice(),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/diagrams.mjs" => Some((
+                    include_bytes!("../web/diagrams.mjs").as_slice(),
                     "text/javascript; charset=utf-8",
                 )),
                 "/ports.mjs" => Some((
@@ -416,7 +449,7 @@ fn run() -> Result<(), String> {
                 respond(
                     request,
                     200,
-                    json!({"version":VERSION,"preview":std::env::var_os("HOME").map(PathBuf::from).is_none_or(|h|h!=home),"games":controller_studio::games::catalog().iter().map(|g|json!({"id":g.id,"title":g.title,"system":g.system,"available":home.join("Games/Nintendo").join(&g.folder).join(&g.filename).is_file()})).collect::<Vec<_>>(),"launch_status":launch_status,"controllers":prepared,"usb_labels":settings.usb_labels,"saved_roles":settings.devices.iter().map(|(key,p)|json!({"key":key,"player":p.player})).collect::<Vec<_>>(),"auto_apply":settings.auto_apply,"wii_style":settings.wii_style,"status":saved_message,"warnings":warnings,"pending":pending,"input_available":input.is_some(),"unsupported":input.as_ref().map(|i|i.unsupported).unwrap_or(0),"receipt":last_receipt,"running":storage::running_emulators(),"systems":model::SYSTEMS.iter().map(|s|(*s,model::actions(s))).collect::<std::collections::BTreeMap<_,_>>()}),
+                    json!({"version":VERSION,"preview":std::env::var_os("HOME").map(PathBuf::from).is_none_or(|h|h!=home),"games":controller_studio::games::catalog().iter().map(|g|json!({"id":g.id,"title":g.title,"system":g.system,"available":home.join("Games/Nintendo").join(&g.folder).join(&g.filename).is_file()})).collect::<Vec<_>>(),"launch_status":launch_status,"runtime":runtime,"last_game":settings.last_game,"ds_display":settings.ds_display,"desired_revision":settings.desired_revision,"applied_revision":settings.applied_revision,"apply_phase":controller_studio::runtime::application_phase(settings.pending_apply,game_child.is_some() || !storage::running_emulators().is_empty() || devices.is_empty(),apply_error),"controllers":prepared,"usb_labels":settings.usb_labels,"saved_roles":settings.devices.iter().map(|(key,p)|json!({"key":key,"player":p.player})).collect::<Vec<_>>(),"auto_apply":settings.auto_apply,"wii_style":settings.wii_style,"status":saved_message,"warnings":warnings,"pending":pending,"input_available":input.is_some(),"unsupported":input.as_ref().map(|i|i.unsupported).unwrap_or(0),"receipt":last_receipt,"running":storage::running_emulators(),"systems":model::SYSTEMS.iter().map(|s|(*s,model::actions(s))).collect::<std::collections::BTreeMap<_,_>>()}),
                 );
             }
 
@@ -448,7 +481,7 @@ fn run() -> Result<(), String> {
                     storage::apply(&home, &plan.changes)?;
                     storage::save_settings(&home, &settings)?;
                     let mut command = Command::new("flatpak");
-                    command.arg("run");
+
                     if game.system == "ds" {
                         controller_studio::games::check_ds_launch(&home, &game.id)?;
                         let config = controller_studio::games::ds_config(&game.id)?;
@@ -459,6 +492,14 @@ fn run() -> Result<(), String> {
                             )?
                             .ok_or("Open melonDS once before launching")?;
                             let base = profiles::ds_keyboard_profile(&base)?;
+                            let base = profiles::ds_display_profile(
+                                &base,
+                                settings
+                                    .ds_display
+                                    .get(&game.id)
+                                    .map(String::as_str)
+                                    .unwrap_or(if game.id == "ASME" { "top" } else { "dual" }),
+                            )?;
                             storage::apply(
                                 &home,
                                 &[storage::Change {
@@ -475,13 +516,13 @@ fn run() -> Result<(), String> {
                             .and_then(|p| p.parent())
                             .ok_or("Invalid game config directory")?
                             .to_path_buf();
-                        command
-                            .arg(format!("--env=XDG_CONFIG_HOME={}", config_root.display()))
-                            .arg("net.kuribo64.melonDS")
-                            .arg("--fullscreen")
-                            .arg(&path);
+                        command.args(controller_studio::games::ds_launch_args(
+                            &config_root,
+                            &path,
+                        ));
                     } else {
                         command
+                            .arg("run")
                             .arg("org.DolphinEmu.dolphin-emu")
                             .arg("--exec")
                             .arg(&path);
@@ -609,20 +650,35 @@ fn run() -> Result<(), String> {
                         p.mappings.insert(u.system.clone(), u.bindings);
                         next.auto_apply = u.auto_apply;
                         if u.system.starts_with("wii-") {
-                            next.wii_style = u.system;
+                            next.wii_style = u.system.clone();
                         }
                     }
+                    if let Some(display) = u.display {
+                        if u.system != "ds" || !["dual", "focus", "top"].contains(&display.as_str())
+                        {
+                            return Err("Choose a supported DS screen layout".into());
+                        }
+                        next.ds_display
+                            .insert(u.game.unwrap_or_else(|| "shared".into()), display);
+                    }
                     let plan = profiles::build(&home, &devices, &next)?;
+                    next.desired_revision = next
+                        .desired_revision
+                        .checked_add(1)
+                        .filter(|n| *n <= 9_007_199_254_740_990)
+                        .ok_or("Too many settings revisions")?;
+                    next.pending_apply = true;
                     storage::save_settings(&home, &next)?;
                     settings = next;
+                    apply_error = false;
                     last = fingerprint(&devices, &settings);
                     warnings = plan.warnings;
-                    if game_child.is_some() {
+                    if game_child.is_some() || !storage::running_emulators().is_empty() {
                         pending = true;
                         pending_manual = true;
                         changed = Instant::now();
                         return Ok(
-                            json!({"ok":true,"queued":true,"message":"Close the launched emulator before applying controls"}),
+                            json!({"ok":true,"revision":settings.desired_revision,"queued":true,"message":"Close Dolphin or the running emulator completely to apply these controls"}),
                         );
                     }
                     match storage::apply(&home, &plan.changes) {
@@ -635,14 +691,21 @@ fn run() -> Result<(), String> {
                             last_receipt = Some(r.clone());
                             pending = false;
                             pending_manual = false;
-                            Ok(json!({"ok":true,"receipt":r,"warnings":warnings}))
+                            settings.pending_apply = false;
+                            settings.applied_revision = settings.desired_revision;
+                            last = fingerprint(&devices, &settings);
+                            storage::save_settings(&home, &settings)?;
+                            Ok(
+                                json!({"ok":true,"revision":settings.desired_revision,"receipt":r,"warnings":warnings}),
+                            )
                         }
                         Err(e) => {
                             pending = true;
                             pending_manual = true;
                             changed = Instant::now();
                             saved_message = e.clone();
-                            Ok(json!({"ok":true,"queued":true,"message":e}))
+                            apply_error = true;
+                            Err(e)
                         }
                     }
                 })();
@@ -658,6 +721,8 @@ fn run() -> Result<(), String> {
             } {
                 Ok(n) => {
                     settings.auto_apply = false;
+                    settings.pending_apply = false;
+                    apply_error = false;
                     let _ = storage::save_settings(&home, &settings);
                     pending = false;
                     pending_manual = false;

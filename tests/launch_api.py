@@ -28,11 +28,11 @@ with tempfile.TemporaryDirectory(prefix='studio-launch-',dir=repo/'test-output')
   deadline=time.monotonic()+10
   while time.monotonic()<deadline:
    latest=req('/api/state')[1]
-   if latest['launch_status'].startswith('Game session closed') and not latest['pending']:break
+   if latest['launch_status'].startswith('Game session closed') and (not state['controllers'] or not latest['pending']):break
    time.sleep(.15)
   else:raise AssertionError('manual queued save did not finish after startup lease closed')
-  args=json.loads(log.read_text());assert '--fullscreen' in args;assert str(rom) in args;assert any(a.startswith('--env=XDG_CONFIG_HOME=') and '/controller-studio-games/ASME' in a for a in args)
-  print(json.dumps({'duplicate_launch_blocked':True,'startup_restore_blocked':True,'startup_save_queued':True,'manual_queue_applies_with_auto_off':True,'isolated_config_argument':True,'fullscreen_argument':True,'single_exact_ROM_argument':True}))
+  args=json.loads(log.read_text());assert '--fullscreen' in args;assert str(rom) in args;assert args[1:3] == ['--command=env', 'net.kuribo64.melonDS'];assert args[3].startswith('XDG_CONFIG_HOME=') and '/controller-studio-games/ASME' in args[3];assert args[4] == 'melonDS'
+  print(json.dumps({'duplicate_launch_blocked':True,'startup_restore_blocked':True,'startup_save_queued':bool(state['controllers']),'manual_queue_applies_with_auto_off':bool(state['controllers']),'isolated_config_argument':True,'fullscreen_argument':True,'single_exact_ROM_argument':True}))
  finally:
   try:req('/api/quit',{})
   except Exception:pass
