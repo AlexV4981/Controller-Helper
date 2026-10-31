@@ -1,3 +1,9 @@
+## 0.4.0 (native acceptance pending)
+
+Discover DS ROMs in subfolders without adding source entries. Keep content identities and layouts after renames or removal, distinguish duplicate titles, and report invalid files. Generate dynamic DS profiles when requested and retain shared controls for direct emulator use.
+
+Add an exact content-ID observer and a pinned source patch for melonDS 1.1 to publish its loaded cartridge identity in its window title. Stock melonDS still cannot provide this signal. The patch must be built and tested on Mint before automatic identification is claimed there.
+
 ## 0.3.2
 
 Clarify that melonDS can be open without exposing its loaded game to Studio. Keep direct play on shared controls and describe isolated DS launches as optional. Stop claiming a detected title proves which controls are active. Automatic DS game identification and dynamic library scanning remain unfinished.

@@ -192,7 +192,22 @@ fn run() -> Result<(), String> {
     {
         storage::recover_interrupted(&home)?;
     }
+    let mut library = controller_studio::library::Library::load(&home)?;
+    // The first scan is bounded and runs once, never on controller polls.
+    if !args
+        .iter()
+        .any(|a| ["--inspect", "--inspect-native", "--export-plan"].contains(&a.as_str()))
+    {
+        library.refresh(&home)?;
+    }
     let mut settings = storage::load_settings(&home)?;
+    if !args
+        .iter()
+        .any(|a| ["--inspect", "--inspect-native", "--export-plan"].contains(&a.as_str()))
+        && library.migrate_settings(&mut settings)
+    {
+        storage::save_settings(&home, &settings)?;
+    }
     settings.assign(&initial);
     if args.contains(&"--inspect".into()) {
         println!(
@@ -249,10 +264,13 @@ fn run() -> Result<(), String> {
     let mut pending_manual = settings.pending_apply;
     let mut apply_error = false;
     let (runtime_tx, runtime_rx) = std::sync::mpsc::channel();
+    let runtime_home = home.clone();
     std::thread::spawn(move || {
         loop {
             if runtime_tx
-                .send(controller_studio::runtime::detect())
+                .send(controller_studio::runtime::detect_with_library(
+                    &controller_studio::library::Library::load(&runtime_home).unwrap_or_default(),
+                ))
                 .is_err()
             {
                 break;
@@ -445,14 +463,23 @@ fn run() -> Result<(), String> {
         }
         match (method, url.as_str()) {
             (Method::Get, "/api/state") => {
-                let prepared:Vec<Value>=devices.iter().map(|d|{let maps:std::collections::BTreeMap<_,_>=model::SYSTEMS.iter().map(|sys|((*sys).to_owned(),settings.bindings(d,sys))).collect();json!({"game_layouts":controller_studio::games::catalog().iter().map(|g|{let own=settings.devices.get(&d.key).and_then(|p|p.games.get(&g.id));(g.id.clone(),json!({"bindings":settings.game_bindings(d,&g.id).unwrap_or_default(),"mode":own.map(|p|p.mode).unwrap_or_else(||settings.devices.get(&d.key).map(|p|p.mode).unwrap_or(Mode::Labels)),"custom":own.is_some()}))}).collect::<std::collections::BTreeMap<_,_>>(),"device":d,"preference":settings.devices.get(&d.key),"mappings":maps,"defaults":model::SYSTEMS.iter().map(|sys|((*sys).to_owned(),model::defaults(d.family,settings.devices.get(&d.key).map(|p|p.mode).unwrap_or(Mode::Labels),sys))).collect::<std::collections::BTreeMap<_,_>>()})}).collect();
+                let prepared:Vec<Value>=devices.iter().map(|d|{let maps:std::collections::BTreeMap<_,_>=model::SYSTEMS.iter().map(|sys|((*sys).to_owned(),settings.bindings(d,sys))).collect();json!({"game_layouts":library.catalog().iter().map(|g|{let own=settings.devices.get(&d.key).and_then(|p|p.games.get(&g.id));(g.id.clone(),json!({"bindings":settings.game_bindings_for(d,g),"mode":own.map(|p|p.mode).unwrap_or_else(||settings.devices.get(&d.key).map(|p|p.mode).unwrap_or(Mode::Labels)),"custom":own.is_some()}))}).collect::<std::collections::BTreeMap<_,_>>(),"device":d,"preference":settings.devices.get(&d.key),"mappings":maps,"defaults":model::SYSTEMS.iter().map(|sys|((*sys).to_owned(),model::defaults(d.family,settings.devices.get(&d.key).map(|p|p.mode).unwrap_or(Mode::Labels),sys))).collect::<std::collections::BTreeMap<_,_>>()})}).collect();
                 respond(
                     request,
                     200,
-                    json!({"version":VERSION,"preview":std::env::var_os("HOME").map(PathBuf::from).is_none_or(|h|h!=home),"games":controller_studio::games::catalog().iter().map(|g|json!({"id":g.id,"title":g.title,"system":g.system,"available":home.join("Games/Nintendo").join(&g.folder).join(&g.filename).is_file()})).collect::<Vec<_>>(),"launch_status":launch_status,"runtime":runtime,"last_game":settings.last_game,"ds_display":settings.ds_display,"desired_revision":settings.desired_revision,"applied_revision":settings.applied_revision,"apply_phase":controller_studio::runtime::application_phase(settings.pending_apply,game_child.is_some() || !storage::running_emulators().is_empty() || devices.is_empty(),apply_error),"controllers":prepared,"usb_labels":settings.usb_labels,"saved_roles":settings.devices.iter().map(|(key,p)|json!({"key":key,"player":p.player})).collect::<Vec<_>>(),"auto_apply":settings.auto_apply,"wii_style":settings.wii_style,"status":saved_message,"warnings":warnings,"pending":pending,"input_available":input.is_some(),"unsupported":input.as_ref().map(|i|i.unsupported).unwrap_or(0),"receipt":last_receipt,"running":storage::running_emulators(),"systems":model::SYSTEMS.iter().map(|s|(*s,model::actions(s))).collect::<std::collections::BTreeMap<_,_>>()}),
+                    json!({"version":VERSION,"preview":std::env::var_os("HOME").map(PathBuf::from).is_none_or(|h|h!=home),"games":library.catalog().iter().map(|g|json!({"id":g.id,"title":g.title,"system":g.system,"available":library.available(&home,&g.id)})).collect::<Vec<_>>(),"library_issues":library.issues,"launch_status":launch_status,"runtime":runtime,"last_game":settings.last_game,"ds_display":settings.ds_display,"desired_revision":settings.desired_revision,"applied_revision":settings.applied_revision,"apply_phase":controller_studio::runtime::application_phase(settings.pending_apply,game_child.is_some() || !storage::running_emulators().is_empty() || devices.is_empty(),apply_error),"controllers":prepared,"usb_labels":settings.usb_labels,"saved_roles":settings.devices.iter().map(|(key,p)|json!({"key":key,"player":p.player})).collect::<Vec<_>>(),"auto_apply":settings.auto_apply,"wii_style":settings.wii_style,"status":saved_message,"warnings":warnings,"pending":pending,"input_available":input.is_some(),"unsupported":input.as_ref().map(|i|i.unsupported).unwrap_or(0),"receipt":last_receipt,"running":storage::running_emulators(),"systems":model::SYSTEMS.iter().map(|s|(*s,model::actions(s))).collect::<std::collections::BTreeMap<_,_>>()}),
                 );
             }
 
+            (Method::Post, "/api/library/refresh") => match library.refresh(&home) {
+                Ok(()) => {
+                    if library.migrate_settings(&mut settings) {
+                        storage::save_settings(&home, &settings)?;
+                    }
+                    respond(request, 200, json!({"ok":true,"issues":library.issues}));
+                }
+                Err(e) => respond(request, 400, json!({"error":e})),
+            },
             (Method::Post, "/api/launch") => {
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]
@@ -461,7 +488,7 @@ fn run() -> Result<(), String> {
                 }
                 let result: Result<Value, String> = (|| {
                     let args = read_json::<Launch>(&mut request)?;
-                    let game = controller_studio::games::find(&args.game)?;
+                    let game = library.find(&args.game)?;
                     if std::env::var_os("HOME")
                         .map(PathBuf::from)
                         .is_none_or(|h| h != home)
@@ -473,10 +500,16 @@ fn run() -> Result<(), String> {
                             "Close all emulator windows before launching another game".into()
                         );
                     }
-                    let path = controller_studio::games::resolve(&home, &game.id)?;
+                    let path = library.resolve(&home, &game.id)?;
                     devices = input.as_mut().map(|i| i.poll()).unwrap_or_default();
                     native_snapshot(&mut devices);
                     settings.assign(&devices);
+                    if game.system == "ds" && controller_studio::library::valid_id(&game.id) {
+                        settings
+                            .ds_display
+                            .entry(game.id.clone())
+                            .or_insert("dual".into());
+                    }
                     let plan = profiles::build(&home, &devices, &settings)?;
                     storage::apply(&home, &plan.changes)?;
                     storage::save_settings(&home, &settings)?;
@@ -597,7 +630,7 @@ fn run() -> Result<(), String> {
                     }
                     let mut next = settings.clone();
                     if let Some(id) = u.game.as_deref() {
-                        let game = controller_studio::games::find(id)?;
+                        let game = library.find(id)?;
                         if game.system != u.system {
                             return Err("Game and controller style do not match".into());
                         }

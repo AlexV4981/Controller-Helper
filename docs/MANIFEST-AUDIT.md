@@ -77,3 +77,20 @@ save success. Window-title matching no longer claims it verified an active saved
 profile. Unknown sessions do not overwrite the editing selection or unsaved drafts.
 These changes do not implement live game identification, dynamic scanning, or a
 native shell. They have not been installed or verified on native Mint yet.
+
+
+## 0.4.0 implementation follow-up
+
+The earlier section describes the pre-implementation 0.3.2 audit. The current
+0.4.0 source adds a bounded persisted DS content index, exact registered config
+paths, on-demand dynamic profiles, one-time legacy preference copying, and a
+public content-ID observer. A separate exact-source patch for official melonDS
+1.1 provides the signal that stock melonDS lacks. See [DS discovery](DS-DISCOVERY.md).
+
+The patched emulator compiled on Debian 13. A private Xvfb integration test used
+temporary copies of the user's two actual DS ROMs: the first loaded-byte hash,
+switching inside melonDS to the second ROM, Studio following both identities,
+and clean emulator exit all passed. No additional ROMs were downloaded. The
+user confirms that no other DS ROMs are available. Synthetic parser/HTTP tests
+remain separate from this real-ROM test. Native Mint installation and acceptance
+remain pending; no P1–P3 work is authorized by these build/test results.

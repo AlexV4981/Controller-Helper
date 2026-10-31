@@ -1,0 +1,17 @@
+{
+  "upstream": "https://github.com/melonDS-emu/melonDS/tree/1.1",
+  "files": {
+    "EmuInstance.h": {
+      "before_sha256": "61d0a1a95711cc12089b9c6d3ffb7e810febfed5eb2c73c58c04a9b0958b7794",
+      "after_sha256": "89084e3e81dd1204c19fa65b13d72869591bf97ce1fef5be089f5b55e6c3244d"
+    },
+    "EmuInstance.cpp": {
+      "before_sha256": "c814b194ab298459483b31198e62d7a07337c2e3b60a7e5ce7ae7f010f187ed0",
+      "after_sha256": "4310ad982174c096934b752507f190f534073750645b35171f15e80c20782d36"
+    },
+    "EmuThread.cpp": {
+      "before_sha256": "e67e731b2106e989adecf31d9cb7c015bc8d86048128dd49622eead0459ec24e",
+      "after_sha256": "ef065596dde427f27f1c4b340db6ee6486777e45c9044ebe0cb004a1722866f4"
+    }
+  }
+}

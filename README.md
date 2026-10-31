@@ -45,13 +45,13 @@ Dolphin starts fullscreen. melonDS has a screen-layout selector: one large scree
 
 The paired diagrams show the emulated controller on the left and your real controller on the right. Green means assigned. Select either side to highlight matching controls in gold; selecting a button does not remap it. Use the binding selector or press-to-assign to change it.
 
-Studio follows a recognized game in Dolphin or melonDS's X11 window title. The active-game card shows what it detected. Unknown titles and multiple games stay explicit; choose a game manually when detection is unavailable. Turn off **Follow the active game** to browse layouts yourself. Game detection needs `xprop` and an X11 session. It does not read game memory or guess from an old command line. The game catalog, controls and last detected game stay available offline.
+Studio follows recognized Dolphin titles and exact DS content IDs in X11 window titles. Stock melonDS does not publish a loaded ROM identity; automatic DS identification requires the optional [melonDS integration](docs/DS-DISCOVERY.md). The active-game card shows what it detected. Unknown titles and multiple games stay explicit; choose a game manually when detection is unavailable. Turn off **Follow the active game** to browse layouts yourself. Game detection needs `xprop` and an X11 session. It does not read game memory or guess from an old command line. The game catalog, controls and last detected game stay available offline.
 
 Saved changes wait until the whole emulator exits, including Dolphin's game-list window. A centered dialog explains this and changes to **Successful** only after the matching saved revision applies. Queued manual changes survive restarting Studio, even with auto-apply off. File errors stay errors and can be retried with **Use these controls**.
 
 For New Super Mario Bros. Wii: Xbox A jumps (Wii 2), X runs (Wii 1), B bubbles (Wii A), LT maps Wii B, RB shakes, and the right stick tilts. Keyboard: X jump, Z run, C bubble/A, V B, Space shake, Q/E tilt left/right, R/F tilt forward/back, arrows move, Enter pause. Existing custom shake/tilt mappings are kept during the old-preset upgrade.
 
-The current game list is in `src/games.json`. It contains 11 Wii games and 2 DS games and expects matching files under `~/Games/Nintendo/Wii` and `~/Games/Nintendo/DS`. No games, BIOS files or keys are included or downloaded.
+DS files are discovered under `~/Games/Nintendo/DS`, including subfolders, at startup and with **Refresh DS library**. Content hashes keep layouts stable across renames and separate same-titled ROMs. Missing files keep their settings but cannot launch. Scan issues are shown in Studio. The bundled Wii list and legacy DS entries remain for compatibility. No games, BIOS files or keys are included or downloaded.
 
 DS game launches support standard DS mode with built-in BIOS. Save paths must be ROM-adjacent or absolute. External BIOS, DSi mode and ambiguous relative save paths are rejected; open the shared emulator for those setups.
 

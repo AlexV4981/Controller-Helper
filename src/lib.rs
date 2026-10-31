@@ -7,3 +7,5 @@ pub mod storage;
 pub mod games;
 
 pub mod runtime;
+
+pub mod library;

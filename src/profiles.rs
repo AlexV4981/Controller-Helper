@@ -269,7 +269,7 @@ fn add(
     content: String,
     note: &str,
 ) -> Result<(), String> {
-    if !storage::allowed(path) {
+    if !storage::allowed_at(home, path) {
         return Err(format!("Unapproved profile target: {path}"));
     }
     if let Some(old) = plan.changes.iter().find(|c| c.path == path) {
@@ -397,10 +397,30 @@ pub fn build(home: &Path, devices: &[Device], settings: &Settings) -> Result<Pla
             updated,
             "DS highest-priority controller, scaling and keyboard retained",
         )?;
-        for game in crate::games::catalog().iter().filter(|g| g.system == "ds") {
+        let library = crate::library::Library::load(home)?;
+        for game in library.catalog().iter().filter(|g| {
+            g.system == "ds"
+                && (!crate::library::valid_id(&g.id)
+                    || settings.ds_display.contains_key(&g.id)
+                    || settings
+                        .devices
+                        .values()
+                        .any(|p| p.games.contains_key(&g.id)))
+        }) {
             let path = crate::games::ds_config(&game.id)?;
-            let original = storage::read(home, &path)?.unwrap_or_else(|| text.clone());
-            let updated = ds_profile(&original, first, &settings.game_bindings(first, &game.id)?)?;
+            let inherited = library
+                .aliases
+                .iter()
+                .find(|(_, id)| **id == game.id)
+                .map(|(alias, _)| crate::games::ds_config(alias))
+                .transpose()?
+                .map(|p| storage::read(home, &p))
+                .transpose()?
+                .flatten();
+            let original = storage::read(home, &path)?
+                .or(inherited)
+                .unwrap_or_else(|| text.clone());
+            let updated = ds_profile(&original, first, &settings.game_bindings_for(first, game))?;
             let updated = ds_display_profile(
                 &updated,
                 settings

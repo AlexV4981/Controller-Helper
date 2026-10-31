@@ -399,6 +399,7 @@ pub struct Settings {
     pub applied_revision: u64,
     pub last_game: Option<String>,
     pub ds_display: BTreeMap<String, String>,
+    pub ds_migrations: std::collections::BTreeSet<String>,
     pub devices: BTreeMap<String, Preference>,
     pub wii_style: String,
     pub usb_labels: BTreeMap<String, String>,
@@ -413,6 +414,7 @@ impl Default for Settings {
             applied_revision: 0,
             last_game: None,
             ds_display: BTreeMap::new(),
+            ds_migrations: Default::default(),
             devices: BTreeMap::new(),
             wii_style: "wii-nunchuk".into(),
             usb_labels: BTreeMap::new(),
@@ -457,12 +459,14 @@ impl Settings {
     }
     pub fn game_bindings(&self, d: &Device, id: &str) -> Result<Bindings, String> {
         let game = crate::games::find(id)?;
-        Ok(self
-            .devices
+        Ok(self.game_bindings_for(d, &game))
+    }
+    pub fn game_bindings_for(&self, d: &Device, game: &crate::games::Game) -> Bindings {
+        self.devices
             .get(&d.key)
-            .and_then(|p| p.games.get(id))
+            .and_then(|p| p.games.get(&game.id))
             .map(|p| p.bindings.clone())
-            .unwrap_or_else(|| self.bindings(d, &game.system)))
+            .unwrap_or_else(|| self.bindings(d, &game.system))
     }
     pub fn bindings(&self, d: &Device, system: &str) -> Bindings {
         let p = self.devices.get(&d.key).cloned().unwrap_or_default();

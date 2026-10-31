@@ -25,7 +25,7 @@ export function sessionSummary(state){
  const running=state.running||[];
  if(running.some(name=>/melonds/i.test(name)))return {
   title:'melonDS open · game not exposed',
-  detail:'melonDS does not expose the loaded game in its window title. You can keep playing directly with its saved controls. Choose Shared console presets → Nintendo DS to edit direct-use controls, or select a game to edit its optional isolated layout.'
+  detail:'The loaded DS game is not identified. Stock melonDS needs the optional identity patch; with that patch installed, refresh the DS library to match its content ID. You can keep playing directly with its saved controls. Choose Shared console presets → Nintendo DS to edit direct-use controls, or select a game to edit its optional isolated layout.'
  };
  if(running.length)return {title:'Emulator open · game not identified',detail:state.runtime?.message||'Choose a game to edit; detection is unavailable.'};
  return {title:state.last_game?'Last played · '+(state.games?.find(g=>g.id===state.last_game)?.title||state.last_game):'No game running',detail:state.runtime?.message||''};

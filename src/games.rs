@@ -22,6 +22,9 @@ pub fn find(id: &str) -> Result<Game, String> {
         .ok_or_else(|| "Unknown game; choose one from the library".into())
 }
 pub fn ds_config(id: &str) -> Result<String, String> {
+    if crate::library::valid_id(id) {
+        return crate::library::config(id);
+    }
     let g = find(id)?;
     if g.system != "ds" {
         return Err("Not a DS game".into());

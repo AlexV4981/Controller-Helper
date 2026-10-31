@@ -19,7 +19,7 @@ assert.equal(appliedSave({applied_revision:4,desired_revision:4,apply_phase:'idl
 const {sessionSummary,scopeNote,saveMessage}=await import('../web/diagrams.mjs');
 const dsOpen={games:[{id:'ASME',title:'Super Mario 64 DS',system:'ds'}],running:['melonDS'],runtime:{game:null,message:'unknown'},last_game:'ASME'};
 assert.match(sessionSummary(dsOpen).title,/melonDS open/);
-assert.match(sessionSummary(dsOpen).detail,/does not expose the loaded game/);
+assert.match(sessionSummary(dsOpen).detail,/loaded DS game is not identified/);
 assert.doesNotMatch(sessionSummary(dsOpen).detail,/launch.*Studio/i);
 assert.equal(sessionSummary({...dsOpen,runtime:{game:'ASME'}}).title,'Super Mario 64 DS');
 assert.equal(sessionSummary({...dsOpen,running:[],runtime:{game:null}}).title,'Last played · Super Mario 64 DS');

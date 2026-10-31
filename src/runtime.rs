@@ -55,6 +55,29 @@ pub fn identify_titles(titles: &[String]) -> Option<String> {
     }
 }
 
+pub fn identify_ds_markers(titles: &[String], library: &crate::library::Library) -> Option<String> {
+    let mut ids = BTreeSet::new();
+    for title in titles {
+        // Only this explicitly versioned public marker carries a ROM content ID.
+        for part in title.split("[CS-ROM-v1:").skip(1) {
+            let (hash, _) = part.split_once(']')?;
+            let id = format!("ds-{hash}");
+            if !crate::library::valid_id(&id) {
+                return None;
+            }
+            if !library.records.get(&id).is_some_and(|r| r.available) {
+                return None;
+            }
+            ids.insert(id);
+        }
+    }
+    if ids.len() == 1 {
+        ids.into_iter().next()
+    } else {
+        None
+    }
+}
+
 fn xprop(args: &[&str]) -> Option<String> {
     let out = Command::new("/usr/bin/timeout")
         .args(["0.15", "/usr/bin/xprop"])
@@ -67,6 +90,9 @@ fn xprop(args: &[&str]) -> Option<String> {
     String::from_utf8(out.stdout).ok()
 }
 pub fn detect() -> Runtime {
+    detect_with_library(&crate::library::Library::default())
+}
+pub fn detect_with_library(library: &crate::library::Library) -> Runtime {
     let uid = fs::metadata("/proc/self")
         .map(|m| m.uid())
         .unwrap_or(u32::MAX);
@@ -115,6 +141,7 @@ pub fn detect() -> Runtime {
         };
     }
     let mut titles = Vec::new();
+    let mut ds_titles = Vec::new();
     for window in windows
         .split(|c: char| c.is_whitespace() || c == ',')
         .filter(|w| w.starts_with("0x"))
@@ -146,14 +173,25 @@ pub fn detect() -> Runtime {
         if !class.contains("dolphin") && !class.contains("melonds") {
             continue;
         }
-        titles.extend(
+        let destination = if class.contains("melonds") {
+            &mut ds_titles
+        } else {
+            &mut titles
+        };
+        destination.extend(
             properties
                 .lines()
                 .filter(|l| l.starts_with("_NET_WM_NAME(") || l.starts_with("WM_NAME("))
                 .map(str::to_owned),
         );
     }
-    let game = identify_titles(&titles);
+    let dolphin = identify_titles(&titles);
+    let ds = identify_ds_markers(&ds_titles, library);
+    let game = match (dolphin, ds) {
+        (Some(_), Some(_)) => None,
+        (d, None) => d,
+        (None, d) => d,
+    };
     Runtime {
         message: if game.is_some() {
             "Game identified from emulator window · editing selection only; active controls are not verified".into()
