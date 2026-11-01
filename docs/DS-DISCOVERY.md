@@ -86,3 +86,40 @@ the patched emulator, native game switching/eject/pause/exit, shared controller 
 keyboard play independently of Studio, correct per-game launch/save paths, and
 unchanged Dolphin/player behavior. No later manifest phase is enabled by synthetic
 or build-only results.
+
+## Installed integration layout
+
+The optional executable and `launch` wrapper belong in melonDS's own data directory:
+`~/.var/app/net.kuribo64.melonDS/data/controller-studio-integration/`. Flatpak masks
+some host XDG directories even when home access is enabled, so `~/.local/bin`
+and `~/.local/share` must not be used as the in-sandbox executable location. The
+small host launcher can remain in `~/.local/bin`; desktop and per-game entries
+invoke the app-private wrapper inside Flatpak. No extra filesystem permission is
+needed for this layout. Update independent Desktop copies as well as menu entries.
+
+Build against the app's actual SDK. The installed Flathub app uses KDE 6.10; its
+[official build manifest](https://github.com/flathub/net.kuribo64.melonDS/blob/master/net.kuribo64.melonDS.yml)
+pins the same melonDS 1.1 source, ENet 1.3.18 and FAAD2 2.11.2. A host Debian build
+compiled successfully and passed its own integration test but failed the Mint
+runtime probe. That binary must not be used as proof of cross-runtime compatibility.
+
+The runtime wrapper checks the expected executable digest and probes `--help`
+before running it. If it is absent, altered, disabled or incompatible, the wrapper
+starts the unchanged `/app/bin/melonDS`. Diagnostics stay in the app-private
+`compatibility.log`. Creating `disabled` beside the integration executable forces
+the stock fallback. Direct play remains possible when identification is unavailable.
+
+## Installed Mint verification (2026-10-31)
+
+The integration was rebuilt inside the installed KDE 6.10 SDK, then tested in
+Mint 22.3 under QEMU. Both the executable and fallback wrapper passed their
+normal non-development Flatpak runtime probes. Studio 0.4.0 identified the
+existing Mario 64 DS widescreen copy and Bowser’s Inside Story, including switching
+through melonDS’s own Open ROM dialog in the same session. The library reported
+no scan issues. Tests used separate ROM copies, configuration and save directories;
+the original games and saves were preserved. melonDS quit through its normal shortcut.
+
+This verifies the installed runtime and identification path under QEMU. Native GPU
+performance, physical controller/keyboard gameplay, eject/failure handling during
+actual play and unchanged Dolphin behavior still need native acceptance. No P1–P3
+manifest phase is enabled by this verification.

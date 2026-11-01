@@ -94,3 +94,12 @@ and clean emulator exit all passed. No additional ROMs were downloaded. The
 user confirms that no other DS ROMs are available. Synthetic parser/HTTP tests
 remain separate from this real-ROM test. Native Mint installation and acceptance
 remain pending; no P1–P3 work is authorized by these build/test results.
+
+### Installed-runtime follow-up
+
+The final integration now resides in Flatpak app-private data, and its launcher
+retains the stock fallback. A rebuild in the exact KDE 6.10 SDK passed Mint’s
+normal runtime probes. Studio followed both existing DS games across an in-emulator
+ROM switch under QEMU; library issues were empty. Independent Desktop and menu
+launchers were corrected as well as Studio’s isolated launch path. Physical native
+gameplay acceptance remains separate; P1–P3 remain untouched. See DS-DISCOVERY.md.

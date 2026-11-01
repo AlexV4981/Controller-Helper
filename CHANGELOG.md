@@ -1,8 +1,8 @@
-## 0.4.0 (native acceptance pending)
+## 0.4.0 (native gameplay acceptance pending)
 
 Discover DS ROMs in subfolders without adding source entries. Keep content identities and layouts after renames or removal, distinguish duplicate titles, and report invalid files. Generate dynamic DS profiles when requested and retain shared controls for direct emulator use.
 
-Add an exact content-ID observer and a pinned source patch for melonDS 1.1 to publish its loaded cartridge identity in its window title. Stock melonDS still cannot provide this signal. The patch must be built and tested on Mint before automatic identification is claimed there.
+Add an exact content-ID observer and a pinned source patch for melonDS 1.1 to publish its loaded cartridge identity in its window title. Stock melonDS still cannot provide this signal. The installed Mint integration was rebuilt in its KDE 6.10 SDK and verified under QEMU with both existing DS games, including switching inside melonDS. Native gameplay acceptance remains pending.
 
 ## 0.3.2
 

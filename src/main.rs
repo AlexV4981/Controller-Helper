@@ -549,9 +549,10 @@ fn run() -> Result<(), String> {
                             .and_then(|p| p.parent())
                             .ok_or("Invalid game config directory")?
                             .to_path_buf();
-                        command.args(controller_studio::games::ds_launch_args(
+                        command.args(controller_studio::games::ds_launch_args_with_program(
                             &config_root,
                             &path,
+                            &controller_studio::games::installed_ds_program(&home),
                         ));
                     } else {
                         command

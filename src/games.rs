@@ -164,15 +164,34 @@ pub fn copy_wfc_once(home: &Path, id: &str) -> Result<(), String> {
 
 // Flatpak initializes XDG paths itself, so set the game path inside its sandbox.
 pub fn ds_launch_args(config: &Path, rom: &Path) -> Vec<std::ffi::OsString> {
+    ds_launch_args_with_program(config, rom, Path::new("melonDS"))
+}
+pub fn ds_launch_args_with_program(
+    config: &Path,
+    rom: &Path,
+    program: &Path,
+) -> Vec<std::ffi::OsString> {
     vec![
         "run".into(),
         "--command=env".into(),
         "net.kuribo64.melonDS".into(),
         format!("XDG_CONFIG_HOME={}", config.display()).into(),
-        "melonDS".into(),
+        program.as_os_str().to_owned(),
         "--fullscreen".into(),
         rom.as_os_str().to_owned(),
     ]
+}
+// The user-local wrapper runs inside Flatpak and selects the optional integration.
+// A stock install keeps the original melonDS command and needs no wrapper.
+pub fn installed_ds_program(home: &Path) -> std::path::PathBuf {
+    let wrapper =
+        home.join(".var/app/net.kuribo64.melonDS/data/controller-studio-integration/launch");
+    if std::fs::symlink_metadata(&wrapper).is_ok_and(|m| m.is_file() && !m.file_type().is_symlink())
+    {
+        wrapper
+    } else {
+        Path::new("melonDS").into()
+    }
 }
 
 #[cfg(test)]
