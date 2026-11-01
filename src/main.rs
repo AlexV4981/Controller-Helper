@@ -169,6 +169,30 @@ fn run() -> Result<(), String> {
     if effective.as_deref() == Some("0") {
         return Err("Run Controller Studio as your normal desktop user, without sudo.".into());
     }
+    if !args.iter().any(|a| {
+        [
+            "--background",
+            "--inspect",
+            "--inspect-native",
+            "--export-plan",
+            "--apply-once",
+        ]
+        .contains(&a.as_str())
+    }) {
+        use std::os::unix::process::CommandExt;
+        let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+        let window = executable.with_file_name("controller-studio-native.py");
+        if !window.is_file() {
+            return Err("The native window is missing. Install controller-studio-native.py beside the engine; see README.md.".into());
+        }
+        let error = Command::new("/usr/bin/python3")
+            .arg(window)
+            .arg("--backend")
+            .arg(executable)
+            .args(&args[1..])
+            .exec();
+        return Err(format!("Could not open the native window: {error}"));
+    }
     let is_native = args.contains(&"--inspect-native".into());
     let mut input = match Input::with_native(is_native) {
         Ok(i) => Some(i),
@@ -241,9 +265,6 @@ fn run() -> Result<(), String> {
     let server = match Server::http(format!("127.0.0.1:{port}")) {
         Ok(s) => s,
         Err(e) => {
-            if !args.contains(&"--background".into()) {
-                let _ = Command::new("xdg-open").arg(&origin).spawn();
-            }
             return Err(format!(
                 "The helper port is already in use; an existing studio may already be open. {e}"
             ));
@@ -254,9 +275,6 @@ fn run() -> Result<(), String> {
     let cookie_value = format!("{cookie_name}={token}");
     let cookie = format!("{cookie_value}; Path=/; HttpOnly; SameSite=Strict");
     println!("Controller Studio {VERSION} — {origin}");
-    if !args.contains(&"--background".into()) {
-        let _ = Command::new("xdg-open").arg(&origin).spawn();
-    }
     let mut native_devices = initial.clone();
     let mut devices = initial;
     let mut last = fingerprint(&devices, &settings);
@@ -387,7 +405,7 @@ fn run() -> Result<(), String> {
             respond(
                 request,
                 200,
-                json!({"app":"controller-studio","version":VERSION}),
+                json!({"app":"controller-studio","version":VERSION,"home":home.canonicalize().unwrap_or_else(|_| home.clone())}),
             );
             continue;
         }
@@ -457,7 +475,7 @@ fn run() -> Result<(), String> {
             respond(
                 request,
                 403,
-                json!({"error":"Open Controller Studio in this browser before continuing"}),
+                json!({"error":"Open Controller Studio before continuing"}),
             );
             continue;
         }

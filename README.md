@@ -6,22 +6,25 @@ Built for Linux Mint and the Flatpak versions of Dolphin, melonDS, Azahar, puNES
 
 ## Build and run
 
-You need Rust with edition 2024 support, SDL2 and a browser. Install the emulators separately.
+You need Rust with edition 2024 support, SDL2, Python 3, PyGObject and WebKitGTK 4.1. On Mint, install `python3-gi` and `gir1.2-webkit2-4.1` from Software Manager. Install the emulators separately.
 
 ```sh
 cargo build --release --locked
-./target/release/controller-studio
+/usr/bin/python3 native/app.py --backend target/release/controller-studio
 ```
 
-To keep the binary in your home folder:
+Install the native desktop app in your home folder:
 
 ```sh
-mkdir -p ~/.local/bin
-install -m 755 target/release/controller-studio ~/.local/bin/controller-studio
+/usr/bin/python3 scripts/install-desktop.py
 ~/.local/bin/controller-studio
 ```
 
-No sudo needed. Pair Bluetooth controllers in Mint's Bluetooth settings first. USB controllers need a data cable.
+Studio opens in its own Linux window. Reopening presents the existing window.
+Closing the window keeps automatic controller support running; **Close the helper**
+in Help stops it. See [native app details](docs/NATIVE-APP.md).
+
+No sudo is needed for app installation. Pair Bluetooth controllers in Mint's Bluetooth settings first. USB controllers need a data cable.
 
 ## Controls
 
@@ -77,7 +80,7 @@ cargo clippy --all-targets -- -D warnings
 node --test tests/input.test.mjs tests/ports.test.mjs
 ```
 
-`--inspect` lists controllers. `--export-plan --home PATH` prints proposed config files without writing them. `--apply-once --home PATH` applies to a test home. An alternate home shows a preview badge. `--background` starts without opening a browser.
+`--inspect` lists controllers. `--export-plan --home PATH` prints proposed config files without writing them. `--apply-once --home PATH` applies to a test home. An alternate home shows a preview badge. `--background` starts the engine without opening a window.
 
 The 3D renderer and web UI are bundled. SDL2 is loaded at runtime, so SDL development headers are not needed to compile. Third-party licenses are included under `vendor/`.
 

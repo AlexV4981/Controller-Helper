@@ -1,3 +1,11 @@
+## 0.5.0
+
+Open Controller Studio in its own Linux desktop window instead of a Firefox tab.
+Repeated launches present the existing window. Keep the background engine running
+when the window closes, warn before discarding edits, and retain queued changes.
+Show startup and connection failures in the app. Restrict the embedded view to the
+local interface and keep all existing controller settings.
+
 ## 0.4.0 (native gameplay acceptance pending)
 
 Discover DS ROMs in subfolders without adding source entries. Keep content identities and layouts after renames or removal, distinguish duplicate titles, and report invalid files. Generate dynamic DS profiles when requested and retain shared controls for direct emulator use.
