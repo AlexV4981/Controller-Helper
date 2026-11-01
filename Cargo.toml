@@ -1,12 +1,13 @@
 [package]
 name = "controller-studio"
-version = "0.2.0"
+version = "0.5.1"
 edition = "2024"
 license = "MIT"
 description = "Offline controller detection, visual remapping and Nintendo emulator profiles"
 
 [dependencies]
 libloading = "0.9"
+libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiny_http = "0.12"

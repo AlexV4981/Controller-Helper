@@ -98,6 +98,14 @@ pub fn allowed(path: &str) -> bool {
                 && path.ends_with(suffix)
         })
 }
+pub fn allowed_at(home: &Path, path: &str) -> bool {
+    allowed(path)
+        || crate::library::Library::load(home).is_ok_and(|l| {
+            l.records
+                .keys()
+                .any(|id| crate::library::config(id).as_deref() == Ok(path))
+        })
+}
 pub fn safe_path(home: &Path, rel: &str) -> Result<PathBuf, String> {
     if rel.is_empty()
         || Path::new(rel)
@@ -151,7 +159,7 @@ fn nonce() -> String {
         std::process::id()
     )
 }
-fn write_atomic(home: &Path, rel: &str, data: &[u8]) -> Result<(), String> {
+pub(crate) fn write_atomic(home: &Path, rel: &str, data: &[u8]) -> Result<(), String> {
     let p = safe_path(home, rel)?;
     let parent = p.parent().ok_or("Missing parent")?;
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -185,20 +193,67 @@ pub fn save_settings(home: &Path, settings: &crate::model::Settings) -> Result<(
         &serde_json::to_vec_pretty(settings).map_err(|e| e.to_string())?,
     )
 }
+fn upgrade_sideways(b: &mut crate::model::Bindings) {
+    if !b.contains_key("B") {
+        b.insert("B".into(), "lt".into());
+        if b.get("A").map(String::as_str) == Some("south")
+            && b.get("2").map(String::as_str) == Some("south")
+        {
+            b.insert("A".into(), "east".into());
+        }
+    }
+}
 pub fn load_settings(home: &Path) -> Result<crate::model::Settings, String> {
     match read(home, &format!("{STATE}/preferences.json"))? {
         Some(s) => {
-            let v: crate::model::Settings = serde_json::from_str(&s)
+            let library = crate::library::Library::load(home)?;
+            let mut v: crate::model::Settings = serde_json::from_str(&s)
                 .map_err(|e| format!("Saved preferences could not be read: {e}"))?;
+            if v.applied_revision > v.desired_revision || v.desired_revision > 9_007_199_254_740_990
+            {
+                return Err("Invalid settings revision".into());
+            }
+            if v.pending_apply && v.desired_revision == v.applied_revision {
+                v.desired_revision += 1;
+            }
             if v.schema != 1 {
                 return Err("Unsupported preference version".into());
             }
-            for p in v.devices.values() {
-                if p.games.len() > crate::games::catalog().len() {
+            if let Some(id) = &v.last_game {
+                library.find(id)?;
+            }
+            if v.ds_migrations.len() > 512
+                || v.ds_migrations
+                    .iter()
+                    .any(|id| !library.records.contains_key(id))
+            {
+                return Err("Invalid DS migration history".into());
+            }
+            for (id, display) in &v.ds_display {
+                if id != "shared" && library.find(id)?.system != "ds" {
+                    return Err("Not a DS display profile".into());
+                }
+                if !["dual", "focus", "top"].contains(&display.as_str()) {
+                    return Err("Unknown DS display layout".into());
+                }
+            }
+            for p in v.devices.values_mut() {
+                for (sys, b) in &mut p.mappings {
+                    if sys == "wii-sideways" {
+                        upgrade_sideways(b);
+                    }
+                }
+                for (id, layout) in &mut p.games {
+                    if library.find(id)?.system == "wii-sideways" {
+                        upgrade_sideways(&mut layout.bindings);
+                    }
+                }
+
+                if p.games.len() > library.catalog().len() {
                     return Err("Too many saved game layouts".into());
                 }
                 for (id, layout) in &p.games {
-                    let game = crate::games::find(id)?;
+                    let game = library.find(id)?;
                     crate::model::validate(&layout.bindings, &game.system)?;
                 }
 
@@ -259,7 +314,7 @@ pub fn apply(home: &Path, changes: &[Change]) -> Result<Receipt, String> {
     let mut entries = Vec::new();
     let mut paths = std::collections::BTreeSet::new();
     for c in changes {
-        if !allowed(&c.path) || c.content.len() > 2_000_000 || !paths.insert(&c.path) {
+        if !allowed_at(home, &c.path) || c.content.len() > 2_000_000 || !paths.insert(&c.path) {
             return Err("Profile path or size failed validation".into());
         }
         let before = read(home, &c.path)?;
@@ -361,7 +416,7 @@ pub fn recover_interrupted(home: &Path) -> Result<(), String> {
         return Err("Recovery identity mismatch".into());
     }
     for entry in &backup.entries {
-        if !allowed(&entry.path) || !paths.insert(&entry.path) {
+        if !allowed_at(home, &entry.path) || !paths.insert(&entry.path) {
             return Err("Invalid pending recovery target".into());
         }
         let current = read(home, &entry.path)?;
@@ -395,7 +450,7 @@ pub fn restore(home: &Path) -> Result<usize, String> {
     }
     let mut paths = std::collections::BTreeSet::new();
     for entry in &backup.entries {
-        if !allowed(&entry.path) || !paths.insert(&entry.path) {
+        if !allowed_at(home, &entry.path) || !paths.insert(&entry.path) {
             return Err("Invalid recovery target".into());
         }
         let current = read(home, &entry.path)?;

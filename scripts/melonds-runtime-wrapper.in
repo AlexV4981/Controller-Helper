@@ -1,0 +1,11 @@
+#!/bin/sh
+# This script runs inside melonDS's existing Flatpak runtime.
+root="$HOME/.var/app/net.kuribo64.melonDS/data/controller-studio-integration"
+log="$root/compatibility.log"
+if [ ! -e "$root/disabled" ] && [ -x "$root/melonDS" ]; then
+    if printf '%s  %s\n' '@BINARY_SHA256@' "$root/melonDS" | /usr/bin/sha256sum --check --status && "$root/melonDS" --help >/dev/null 2>"$log"; then
+        exec "$root/melonDS" "$@"
+    fi
+fi
+# An incompatible integration must not prevent ordinary DS play.
+exec /app/bin/melonDS "$@"

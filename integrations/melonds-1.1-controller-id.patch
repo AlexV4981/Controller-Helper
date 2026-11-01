@@ -1,0 +1,70 @@
+--- a/src/frontend/qt_sdl/EmuInstance.h
++++ b/src/frontend/qt_sdl/EmuInstance.h
+@@ -275,6 +275,7 @@
+     int cartType;
+     std::string baseROMDir;
+     std::string baseROMName;
++    std::string controllerStudioROMID;
+     std::string baseAssetName;
+     bool changeCart;
+     std::unique_ptr<melonDS::NDSCart::CartCommon> nextCart;
+--- a/src/frontend/qt_sdl/EmuInstance.cpp
++++ b/src/frontend/qt_sdl/EmuInstance.cpp
+@@ -29,6 +29,7 @@
+ #include <fstream>
+ 
+ #include <QDateTime>
++#include <QCryptographicHash>
+ 
+ #include <zstd.h>
+ #ifdef ARCHIVE_SUPPORT_ENABLED
+@@ -1866,6 +1867,7 @@
+ 
+ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
+ {
++    controllerStudioROMID.clear();
+     unique_ptr<u8[]> filedata = nullptr;
+     u32 filelen;
+     std::string basepath;
+@@ -1926,6 +1928,12 @@
+             .SRAMLength = savelen,
+     };
+ 
++    // Hash the loaded bytes, not a filename or a recent-file preference.
++    std::string loadedID;
++    if (filelen <= 536870912)
++        loadedID = QCryptographicHash::hash(
++            QByteArray::fromRawData(reinterpret_cast<const char*>(filedata.get()), static_cast<int>(filelen)),
++            QCryptographicHash::Sha256).toHex().toStdString();
+     auto cart = NDSCart::ParseROM(std::move(filedata), filelen, this, std::move(cartargs));
+     if (!cart)
+     {
+@@ -1972,12 +1980,14 @@
+ 
+     cartType = 0;
+     ndsSave = std::make_unique<SaveManager>(savname);
++    controllerStudioROMID = loadedID;
+ 
+     return true; // success
+ }
+ 
+ void EmuInstance::ejectCart()
+ {
++    controllerStudioROMID.clear();
+     ndsSave = nullptr;
+ 
+     if (emuIsActive())
+--- a/src/frontend/qt_sdl/EmuThread.cpp
++++ b/src/frontend/qt_sdl/EmuThread.cpp
+@@ -676,7 +676,10 @@
+ 
+ void EmuThread::changeWindowTitle(char* title)
+ {
+-    emit windowTitleChange(QString(title));
++    QString publicTitle(title);
++    if (!emuInstance->controllerStudioROMID.empty())
++        publicTitle += QString::fromStdString(" [CS-ROM-v1:" + emuInstance->controllerStudioROMID + "]");
++    emit windowTitleChange(publicTitle);
+ }
+ 
+ void EmuThread::initContext(int win)

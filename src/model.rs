@@ -114,6 +114,7 @@ pub fn actions(system: &str) -> Vec<&'static str> {
         ],
         "wii-sideways" => vec![
             "A",
+            "B",
             "1",
             "2",
             "Select",
@@ -229,6 +230,8 @@ pub fn defaults(family: Family, mode: Mode, system: &str) -> Bindings {
         out.insert("Z".into(), "lt".into());
     }
     if system == "wii-sideways" {
+        out.insert("A".into(), "east".into());
+        out.insert("B".into(), "lt".into());
         out.insert("Shake".into(), "rb".into());
     }
     out
@@ -391,6 +394,12 @@ impl Default for Preference {
 pub struct Settings {
     pub schema: u32,
     pub auto_apply: bool,
+    pub pending_apply: bool,
+    pub desired_revision: u64,
+    pub applied_revision: u64,
+    pub last_game: Option<String>,
+    pub ds_display: BTreeMap<String, String>,
+    pub ds_migrations: std::collections::BTreeSet<String>,
     pub devices: BTreeMap<String, Preference>,
     pub wii_style: String,
     pub usb_labels: BTreeMap<String, String>,
@@ -400,6 +409,12 @@ impl Default for Settings {
         Self {
             schema: 1,
             auto_apply: true,
+            pending_apply: false,
+            desired_revision: 0,
+            applied_revision: 0,
+            last_game: None,
+            ds_display: BTreeMap::new(),
+            ds_migrations: Default::default(),
             devices: BTreeMap::new(),
             wii_style: "wii-nunchuk".into(),
             usb_labels: BTreeMap::new(),
@@ -444,12 +459,14 @@ impl Settings {
     }
     pub fn game_bindings(&self, d: &Device, id: &str) -> Result<Bindings, String> {
         let game = crate::games::find(id)?;
-        Ok(self
-            .devices
+        Ok(self.game_bindings_for(d, &game))
+    }
+    pub fn game_bindings_for(&self, d: &Device, game: &crate::games::Game) -> Bindings {
+        self.devices
             .get(&d.key)
-            .and_then(|p| p.games.get(id))
+            .and_then(|p| p.games.get(&game.id))
             .map(|p| p.bindings.clone())
-            .unwrap_or_else(|| self.bindings(d, &game.system)))
+            .unwrap_or_else(|| self.bindings(d, &game.system))
     }
     pub fn bindings(&self, d: &Device, system: &str) -> Bindings {
         let p = self.devices.get(&d.key).cloned().unwrap_or_default();

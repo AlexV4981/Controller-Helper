@@ -28,6 +28,8 @@ struct Update {
     game: Option<String>,
     #[serde(default)]
     inherit: bool,
+    #[serde(default)]
+    display: Option<String>,
 }
 fn header(request: &Request, name: &'static str) -> Option<String> {
     request
@@ -167,6 +169,55 @@ fn run() -> Result<(), String> {
     if effective.as_deref() == Some("0") {
         return Err("Run Controller Studio as your normal desktop user, without sudo.".into());
     }
+    if !args.iter().any(|a| {
+        [
+            "--background",
+            "--inspect",
+            "--inspect-native",
+            "--export-plan",
+            "--apply-once",
+        ]
+        .contains(&a.as_str())
+    }) {
+        use std::os::unix::process::CommandExt;
+        let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+        let window = executable.with_file_name("controller-studio-native.py");
+        if !window.is_file() {
+            return Err("The native window is missing. Install controller-studio-native.py beside the engine; see README.md.".into());
+        }
+        let error = Command::new("/usr/bin/python3")
+            .arg(window)
+            .arg("--backend")
+            .arg(executable)
+            .args(&args[1..])
+            .exec();
+        return Err(format!("Could not open the native window: {error}"));
+    }
+    let port = args
+        .iter()
+        .position(|a| a == "--port")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(17645);
+    let origin = format!("http://127.0.0.1:{port}");
+    // Reserve the port before scanning, recovery or any settings writes.
+    let server = if !args.iter().any(|a| {
+        [
+            "--inspect",
+            "--inspect-native",
+            "--export-plan",
+            "--apply-once",
+        ]
+        .contains(&a.as_str())
+    }) {
+        Some(Server::http(format!("127.0.0.1:{port}")).map_err(|e| {
+            format!(
+                "The helper port is already in use; an existing studio may already be open. {e}"
+            )
+        })?)
+    } else {
+        None
+    };
     let is_native = args.contains(&"--inspect-native".into());
     let mut input = match Input::with_native(is_native) {
         Ok(i) => Some(i),
@@ -190,7 +241,22 @@ fn run() -> Result<(), String> {
     {
         storage::recover_interrupted(&home)?;
     }
+    let mut library = controller_studio::library::Library::load(&home)?;
+    // The first scan is bounded and runs once, never on controller polls.
+    if !args
+        .iter()
+        .any(|a| ["--inspect", "--inspect-native", "--export-plan"].contains(&a.as_str()))
+    {
+        library.refresh(&home)?;
+    }
     let mut settings = storage::load_settings(&home)?;
+    if !args
+        .iter()
+        .any(|a| ["--inspect", "--inspect-native", "--export-plan"].contains(&a.as_str()))
+        && library.migrate_settings(&mut settings)
+    {
+        storage::save_settings(&home, &settings)?;
+    }
     settings.assign(&initial);
     if args.contains(&"--inspect".into()) {
         println!(
@@ -214,37 +280,34 @@ fn run() -> Result<(), String> {
         println!("{}", json!({"receipt":receipt,"warnings":plan.warnings}));
         return Ok(());
     }
-    let port = args
-        .iter()
-        .position(|a| a == "--port")
-        .and_then(|i| args.get(i + 1))
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(17645);
-    let origin = format!("http://127.0.0.1:{port}");
-    let server = match Server::http(format!("127.0.0.1:{port}")) {
-        Ok(s) => s,
-        Err(e) => {
-            if !args.contains(&"--background".into()) {
-                let _ = Command::new("xdg-open").arg(&origin).spawn();
-            }
-            return Err(format!(
-                "The helper port is already in use; an existing studio may already be open. {e}"
-            ));
-        }
-    };
+    let server = server.ok_or("Controller server mode was not selected")?;
     let token = nonce()?;
     let cookie_name = format!("controller_studio_{port}");
     let cookie_value = format!("{cookie_name}={token}");
     let cookie = format!("{cookie_value}; Path=/; HttpOnly; SameSite=Strict");
     println!("Controller Studio {VERSION} — {origin}");
-    if !args.contains(&"--background".into()) {
-        let _ = Command::new("xdg-open").arg(&origin).spawn();
-    }
     let mut native_devices = initial.clone();
     let mut devices = initial;
     let mut last = fingerprint(&devices, &settings);
     let mut pending = true;
-    let mut pending_manual = false;
+    let mut pending_manual = settings.pending_apply;
+    let mut apply_error = false;
+    let (runtime_tx, runtime_rx) = std::sync::mpsc::channel();
+    let runtime_home = home.clone();
+    std::thread::spawn(move || {
+        loop {
+            if runtime_tx
+                .send(controller_studio::runtime::detect_with_library(
+                    &controller_studio::library::Library::load(&runtime_home).unwrap_or_default(),
+                ))
+                .is_err()
+            {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    });
+    let mut runtime = controller_studio::runtime::Runtime::default();
     let mut changed = Instant::now();
     let mut last_check = Instant::now();
     let mut saved_message = "Ready to set up your controllers".to_owned();
@@ -253,6 +316,13 @@ fn run() -> Result<(), String> {
     let mut game_child: Option<std::process::Child> = None;
     let mut launch_status = String::new();
     loop {
+        for sample in runtime_rx.try_iter() {
+            if sample.game.is_some() && sample.game != settings.last_game {
+                settings.last_game = sample.game.clone();
+                let _ = storage::save_settings(&home, &settings);
+            }
+            runtime = sample;
+        }
         if let Some(child) = game_child.as_mut()
             && let Some(status) = child.try_wait().map_err(|e| e.to_string())?
         {
@@ -295,6 +365,8 @@ fn run() -> Result<(), String> {
         if pending
             && game_child.is_none()
             && (settings.auto_apply || pending_manual)
+            && !apply_error
+            && storage::running_emulators().is_empty()
             && !devices.is_empty()
             && changed.elapsed() > Duration::from_secs(2)
         {
@@ -316,10 +388,14 @@ fn run() -> Result<(), String> {
                     last_receipt = Some(r);
                     pending = false;
                     pending_manual = false;
+                    settings.pending_apply = false;
+                    settings.applied_revision = settings.desired_revision;
+                    last = fingerprint(&devices, &settings);
                     let _ = storage::save_settings(&home, &settings);
                 }
                 Err(e) => {
                     saved_message = e;
+                    apply_error = true;
                     changed = Instant::now();
                 }
             }
@@ -340,7 +416,7 @@ fn run() -> Result<(), String> {
             respond(
                 request,
                 200,
-                json!({"app":"controller-studio","version":VERSION}),
+                json!({"app":"controller-studio","version":VERSION,"home":home.canonicalize().unwrap_or_else(|_| home.clone())}),
             );
             continue;
         }
@@ -352,6 +428,10 @@ fn run() -> Result<(), String> {
                 )),
                 "/app.js" => Some((
                     include_bytes!("../web/app.js").as_slice(),
+                    "text/javascript; charset=utf-8",
+                )),
+                "/diagrams.mjs" => Some((
+                    include_bytes!("../web/diagrams.mjs").as_slice(),
                     "text/javascript; charset=utf-8",
                 )),
                 "/ports.mjs" => Some((
@@ -406,20 +486,29 @@ fn run() -> Result<(), String> {
             respond(
                 request,
                 403,
-                json!({"error":"Open Controller Studio in this browser before continuing"}),
+                json!({"error":"Open Controller Studio before continuing"}),
             );
             continue;
         }
         match (method, url.as_str()) {
             (Method::Get, "/api/state") => {
-                let prepared:Vec<Value>=devices.iter().map(|d|{let maps:std::collections::BTreeMap<_,_>=model::SYSTEMS.iter().map(|sys|((*sys).to_owned(),settings.bindings(d,sys))).collect();json!({"game_layouts":controller_studio::games::catalog().iter().map(|g|{let own=settings.devices.get(&d.key).and_then(|p|p.games.get(&g.id));(g.id.clone(),json!({"bindings":settings.game_bindings(d,&g.id).unwrap_or_default(),"mode":own.map(|p|p.mode).unwrap_or_else(||settings.devices.get(&d.key).map(|p|p.mode).unwrap_or(Mode::Labels)),"custom":own.is_some()}))}).collect::<std::collections::BTreeMap<_,_>>(),"device":d,"preference":settings.devices.get(&d.key),"mappings":maps,"defaults":model::SYSTEMS.iter().map(|sys|((*sys).to_owned(),model::defaults(d.family,settings.devices.get(&d.key).map(|p|p.mode).unwrap_or(Mode::Labels),sys))).collect::<std::collections::BTreeMap<_,_>>()})}).collect();
+                let prepared:Vec<Value>=devices.iter().map(|d|{let maps:std::collections::BTreeMap<_,_>=model::SYSTEMS.iter().map(|sys|((*sys).to_owned(),settings.bindings(d,sys))).collect();json!({"game_layouts":library.catalog().iter().map(|g|{let own=settings.devices.get(&d.key).and_then(|p|p.games.get(&g.id));(g.id.clone(),json!({"bindings":settings.game_bindings_for(d,g),"mode":own.map(|p|p.mode).unwrap_or_else(||settings.devices.get(&d.key).map(|p|p.mode).unwrap_or(Mode::Labels)),"custom":own.is_some()}))}).collect::<std::collections::BTreeMap<_,_>>(),"device":d,"preference":settings.devices.get(&d.key),"mappings":maps,"defaults":model::SYSTEMS.iter().map(|sys|((*sys).to_owned(),model::defaults(d.family,settings.devices.get(&d.key).map(|p|p.mode).unwrap_or(Mode::Labels),sys))).collect::<std::collections::BTreeMap<_,_>>()})}).collect();
                 respond(
                     request,
                     200,
-                    json!({"version":VERSION,"preview":std::env::var_os("HOME").map(PathBuf::from).is_none_or(|h|h!=home),"games":controller_studio::games::catalog().iter().map(|g|json!({"id":g.id,"title":g.title,"system":g.system,"available":home.join("Games/Nintendo").join(&g.folder).join(&g.filename).is_file()})).collect::<Vec<_>>(),"launch_status":launch_status,"controllers":prepared,"usb_labels":settings.usb_labels,"saved_roles":settings.devices.iter().map(|(key,p)|json!({"key":key,"player":p.player})).collect::<Vec<_>>(),"auto_apply":settings.auto_apply,"wii_style":settings.wii_style,"status":saved_message,"warnings":warnings,"pending":pending,"input_available":input.is_some(),"unsupported":input.as_ref().map(|i|i.unsupported).unwrap_or(0),"receipt":last_receipt,"running":storage::running_emulators(),"systems":model::SYSTEMS.iter().map(|s|(*s,model::actions(s))).collect::<std::collections::BTreeMap<_,_>>()}),
+                    json!({"version":VERSION,"preview":std::env::var_os("HOME").map(PathBuf::from).is_none_or(|h|h!=home),"games":library.catalog().iter().map(|g|json!({"id":g.id,"title":g.title,"system":g.system,"available":library.available(&home,&g.id)})).collect::<Vec<_>>(),"library_issues":library.issues,"launch_status":launch_status,"runtime":runtime,"last_game":settings.last_game,"ds_display":settings.ds_display,"desired_revision":settings.desired_revision,"applied_revision":settings.applied_revision,"apply_phase":controller_studio::runtime::application_phase(settings.pending_apply,game_child.is_some() || !storage::running_emulators().is_empty() || devices.is_empty(),apply_error),"controllers":prepared,"usb_labels":settings.usb_labels,"saved_roles":settings.devices.iter().map(|(key,p)|json!({"key":key,"player":p.player})).collect::<Vec<_>>(),"auto_apply":settings.auto_apply,"wii_style":settings.wii_style,"status":saved_message,"warnings":warnings,"pending":pending,"input_available":input.is_some(),"unsupported":input.as_ref().map(|i|i.unsupported).unwrap_or(0),"receipt":last_receipt,"running":storage::running_emulators(),"systems":model::SYSTEMS.iter().map(|s|(*s,model::actions(s))).collect::<std::collections::BTreeMap<_,_>>()}),
                 );
             }
 
+            (Method::Post, "/api/library/refresh") => match library.refresh(&home) {
+                Ok(()) => {
+                    if library.migrate_settings(&mut settings) {
+                        storage::save_settings(&home, &settings)?;
+                    }
+                    respond(request, 200, json!({"ok":true,"issues":library.issues}));
+                }
+                Err(e) => respond(request, 400, json!({"error":e})),
+            },
             (Method::Post, "/api/launch") => {
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]
@@ -428,7 +517,7 @@ fn run() -> Result<(), String> {
                 }
                 let result: Result<Value, String> = (|| {
                     let args = read_json::<Launch>(&mut request)?;
-                    let game = controller_studio::games::find(&args.game)?;
+                    let game = library.find(&args.game)?;
                     if std::env::var_os("HOME")
                         .map(PathBuf::from)
                         .is_none_or(|h| h != home)
@@ -440,15 +529,21 @@ fn run() -> Result<(), String> {
                             "Close all emulator windows before launching another game".into()
                         );
                     }
-                    let path = controller_studio::games::resolve(&home, &game.id)?;
+                    let path = library.resolve(&home, &game.id)?;
                     devices = input.as_mut().map(|i| i.poll()).unwrap_or_default();
                     native_snapshot(&mut devices);
                     settings.assign(&devices);
+                    if game.system == "ds" && controller_studio::library::valid_id(&game.id) {
+                        settings
+                            .ds_display
+                            .entry(game.id.clone())
+                            .or_insert("dual".into());
+                    }
                     let plan = profiles::build(&home, &devices, &settings)?;
                     storage::apply(&home, &plan.changes)?;
                     storage::save_settings(&home, &settings)?;
                     let mut command = Command::new("flatpak");
-                    command.arg("run");
+
                     if game.system == "ds" {
                         controller_studio::games::check_ds_launch(&home, &game.id)?;
                         let config = controller_studio::games::ds_config(&game.id)?;
@@ -459,6 +554,14 @@ fn run() -> Result<(), String> {
                             )?
                             .ok_or("Open melonDS once before launching")?;
                             let base = profiles::ds_keyboard_profile(&base)?;
+                            let base = profiles::ds_display_profile(
+                                &base,
+                                settings
+                                    .ds_display
+                                    .get(&game.id)
+                                    .map(String::as_str)
+                                    .unwrap_or(if game.id == "ASME" { "top" } else { "dual" }),
+                            )?;
                             storage::apply(
                                 &home,
                                 &[storage::Change {
@@ -475,13 +578,14 @@ fn run() -> Result<(), String> {
                             .and_then(|p| p.parent())
                             .ok_or("Invalid game config directory")?
                             .to_path_buf();
-                        command
-                            .arg(format!("--env=XDG_CONFIG_HOME={}", config_root.display()))
-                            .arg("net.kuribo64.melonDS")
-                            .arg("--fullscreen")
-                            .arg(&path);
+                        command.args(controller_studio::games::ds_launch_args_with_program(
+                            &config_root,
+                            &path,
+                            &controller_studio::games::installed_ds_program(&home),
+                        ));
                     } else {
                         command
+                            .arg("run")
                             .arg("org.DolphinEmu.dolphin-emu")
                             .arg("--exec")
                             .arg(&path);
@@ -556,7 +660,7 @@ fn run() -> Result<(), String> {
                     }
                     let mut next = settings.clone();
                     if let Some(id) = u.game.as_deref() {
-                        let game = controller_studio::games::find(id)?;
+                        let game = library.find(id)?;
                         if game.system != u.system {
                             return Err("Game and controller style do not match".into());
                         }
@@ -609,20 +713,35 @@ fn run() -> Result<(), String> {
                         p.mappings.insert(u.system.clone(), u.bindings);
                         next.auto_apply = u.auto_apply;
                         if u.system.starts_with("wii-") {
-                            next.wii_style = u.system;
+                            next.wii_style = u.system.clone();
                         }
                     }
+                    if let Some(display) = u.display {
+                        if u.system != "ds" || !["dual", "focus", "top"].contains(&display.as_str())
+                        {
+                            return Err("Choose a supported DS screen layout".into());
+                        }
+                        next.ds_display
+                            .insert(u.game.unwrap_or_else(|| "shared".into()), display);
+                    }
                     let plan = profiles::build(&home, &devices, &next)?;
+                    next.desired_revision = next
+                        .desired_revision
+                        .checked_add(1)
+                        .filter(|n| *n <= 9_007_199_254_740_990)
+                        .ok_or("Too many settings revisions")?;
+                    next.pending_apply = true;
                     storage::save_settings(&home, &next)?;
                     settings = next;
+                    apply_error = false;
                     last = fingerprint(&devices, &settings);
                     warnings = plan.warnings;
-                    if game_child.is_some() {
+                    if game_child.is_some() || !storage::running_emulators().is_empty() {
                         pending = true;
                         pending_manual = true;
                         changed = Instant::now();
                         return Ok(
-                            json!({"ok":true,"queued":true,"message":"Close the launched emulator before applying controls"}),
+                            json!({"ok":true,"revision":settings.desired_revision,"queued":true,"message":"Close Dolphin or the running emulator completely to apply these controls"}),
                         );
                     }
                     match storage::apply(&home, &plan.changes) {
@@ -635,14 +754,21 @@ fn run() -> Result<(), String> {
                             last_receipt = Some(r.clone());
                             pending = false;
                             pending_manual = false;
-                            Ok(json!({"ok":true,"receipt":r,"warnings":warnings}))
+                            settings.pending_apply = false;
+                            settings.applied_revision = settings.desired_revision;
+                            last = fingerprint(&devices, &settings);
+                            storage::save_settings(&home, &settings)?;
+                            Ok(
+                                json!({"ok":true,"revision":settings.desired_revision,"receipt":r,"warnings":warnings}),
+                            )
                         }
                         Err(e) => {
                             pending = true;
                             pending_manual = true;
                             changed = Instant::now();
                             saved_message = e.clone();
-                            Ok(json!({"ok":true,"queued":true,"message":e}))
+                            apply_error = true;
+                            Err(e)
                         }
                     }
                 })();
@@ -658,6 +784,8 @@ fn run() -> Result<(), String> {
             } {
                 Ok(n) => {
                     settings.auto_apply = false;
+                    settings.pending_apply = false;
+                    apply_error = false;
                     let _ = storage::save_settings(&home, &settings);
                     pending = false;
                     pending_manual = false;

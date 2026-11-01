@@ -614,3 +614,171 @@ fn game_lookup_rejects_header_mismatch_and_symlinked_library() {
     std::os::unix::fs::symlink("/etc/passwd", h.0.join(&rel)).unwrap();
     assert!(controller_studio::games::resolve(&h.0, "ASME").is_err());
 }
+
+#[test]
+fn sideways_has_distinct_jump_bubble_and_rear_trigger() {
+    let d = device();
+    let b = controller_studio::model::defaults(d.family, Mode::Labels, "wii-sideways");
+    assert!(controller_studio::model::actions("wii-sideways").contains(&"B"));
+    assert_ne!(b["A"], b["2"]);
+    assert_eq!(b["A"], "east");
+    assert_eq!(b["B"], "lt");
+}
+
+#[test]
+fn sideways_game_profile_includes_every_remote_control_and_keyboard_fallbacks() {
+    let h = Home::new();
+    let d = device();
+    let mut s = Settings::default();
+    s.assign(std::slice::from_ref(&d));
+    h.put(
+        ".var/app/org.DolphinEmu.dolphin-emu/config/dolphin-emu/WiimoteNew.ini",
+        "[Wiimote1]\nSource=0\n",
+    );
+    let plan = profiles::build(&h.0, &[d], &s).unwrap();
+    let profile = &plan
+        .changes
+        .iter()
+        .find(|c| c.path.ends_with("ControllerStudio-SMNE01-P1.ini"))
+        .unwrap()
+        .content;
+    for key in [
+        "Buttons/A",
+        "Buttons/B",
+        "Buttons/1",
+        "Buttons/2",
+        "Buttons/+",
+        "Buttons/-",
+        "Buttons/Home",
+        "D-Pad/Up",
+        "D-Pad/Down",
+        "D-Pad/Left",
+        "D-Pad/Right",
+        "Shake/X",
+        "Shake/Y",
+        "Shake/Z",
+        "Tilt/Left",
+        "Tilt/Right",
+        "Tilt/Forward",
+        "Tilt/Backward",
+    ] {
+        assert!(
+            profile.lines().any(|l| l.starts_with(&format!("{key} = "))
+                && l.contains("SDL/")
+                && l.contains("XInput2/")),
+            "missing {key}"
+        );
+    }
+    assert!(profile.contains("Extension = None"));
+    assert!(profile.contains("Options/Sideways Wiimote = true"));
+    for player in 2..=4 {
+        let inactive = &plan
+            .changes
+            .iter()
+            .find(|c| {
+                c.path
+                    .ends_with(&format!("ControllerStudio-SMNE01-P{player}.ini"))
+            })
+            .unwrap()
+            .content;
+        assert!(inactive.contains("Source = 0"));
+    }
+}
+#[test]
+fn ds_display_layouts_keep_touchscreen_access_and_reject_unknown_options() {
+    let base = "[Instance0.Keyboard]\nA=88\n[Instance0.Window0]\nScreenSizing=0\n";
+    let top = profiles::ds_display_profile(base, "top").unwrap();
+    assert!(top.contains("ScreenSizing = 4"));
+    assert!(top.contains("HK_SwapScreens = 16777217"));
+    assert!(top.contains("A = 88"));
+    let dual = profiles::ds_display_profile(base, "dual").unwrap();
+    assert!(dual.contains("ScreenLayout = 2"));
+    assert!(dual.contains("ScreenSizing = 0"));
+    assert!(profiles::ds_display_profile(base, "wide").is_err());
+}
+#[test]
+fn legacy_sideways_layout_upgrades_without_losing_custom_controls() {
+    let h = Home::new();
+    let d = device();
+    let mut s = Settings::default();
+    s.assign(std::slice::from_ref(&d));
+    let mut b = controller_studio::model::defaults(d.family, Mode::Labels, "wii-sideways");
+    b.remove("B");
+    b.insert("A".into(), "south".into());
+    b.insert("Shake".into(), "ls".into());
+    s.devices
+        .get_mut(&d.key)
+        .unwrap()
+        .mappings
+        .insert("wii-sideways".into(), b);
+    storage::save_settings(&h.0, &s).unwrap();
+    let loaded = storage::load_settings(&h.0).unwrap();
+    let upgraded = loaded.bindings(&d, "wii-sideways");
+    assert_eq!(upgraded["A"], "east");
+    assert_eq!(upgraded["B"], "lt");
+    assert_eq!(upgraded["Shake"], "ls");
+}
+
+#[test]
+fn verified_game_aspect_is_not_reset_when_controller_profiles_regenerate() {
+    let h = Home::new();
+    let d = device();
+    let mut s = Settings::default();
+    s.assign(std::slice::from_ref(&d));
+    h.put(
+        ".var/app/net.kuribo64.melonDS/config/melonDS/melonDS.toml",
+        "[Instance0]\nJoystickID=-1\n",
+    );
+    let path = controller_studio::games::ds_config("ASME").unwrap();
+    h.put(
+        &path,
+        "[Instance0.Window0]\nScreenAspectTop=1\nScreenAspectBot=1\n",
+    );
+    let plan = profiles::build(&h.0, &[d], &s).unwrap();
+    let text = &plan
+        .changes
+        .iter()
+        .find(|c| c.path == path)
+        .unwrap()
+        .content;
+    assert!(text.contains("ScreenAspectTop = 1"));
+    assert!(text.contains("ScreenAspectBot = 1"));
+}
+
+#[test]
+fn widescreen_variant_rejects_wrong_revision_hash_and_symlinks() {
+    let h = Home::new();
+    let dir = h.0.join("Games/Nintendo/DS");
+    fs::create_dir_all(&dir).unwrap();
+    let name = "Super Mario 64 DS (USA) (Rev 1) (Widescreen).nds";
+    let path = dir.join(name);
+    let mut header = vec![0; 96];
+    header[12..16].copy_from_slice(b"ASME");
+    fs::write(&path, &header).unwrap();
+    assert!(
+        controller_studio::games::resolve(&h.0, "ASME")
+            .unwrap_err()
+            .contains("revision")
+    );
+    header[30] = 1;
+    fs::write(&path, &header).unwrap();
+    assert!(
+        controller_studio::games::resolve(&h.0, "ASME")
+            .unwrap_err()
+            .contains("verification")
+    );
+    fs::remove_file(&path).unwrap();
+    std::os::unix::fs::symlink("/etc/passwd", &path).unwrap();
+    assert!(
+        controller_studio::games::resolve(&h.0, "ASME")
+            .unwrap_err()
+            .contains("symbolic")
+    );
+    fs::remove_file(&path).unwrap();
+    std::os::unix::fs::symlink("/missing-controller-studio-test-file", &path).unwrap();
+    assert!(
+        controller_studio::games::resolve(&h.0, "ASME")
+            .unwrap_err()
+            .contains("symbolic")
+    );
+}

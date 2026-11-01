@@ -6,22 +6,25 @@ Built for Linux Mint and the Flatpak versions of Dolphin, melonDS, Azahar, puNES
 
 ## Build and run
 
-You need Rust with edition 2024 support, SDL2 and a browser. Install the emulators separately.
+You need Rust with edition 2024 support, SDL2, Python 3, PyGObject and WebKitGTK 4.1. On Mint, install `python3-gi` and `gir1.2-webkit2-4.1` from Software Manager. Install the emulators separately.
 
 ```sh
 cargo build --release --locked
-./target/release/controller-studio
+/usr/bin/python3 native/app.py --backend target/release/controller-studio
 ```
 
-To keep the binary in your home folder:
+Install the native desktop app in your home folder:
 
 ```sh
-mkdir -p ~/.local/bin
-install -m 755 target/release/controller-studio ~/.local/bin/controller-studio
+/usr/bin/python3 scripts/install-desktop.py
 ~/.local/bin/controller-studio
 ```
 
-No sudo needed. Pair Bluetooth controllers in Mint's Bluetooth settings first. USB controllers need a data cable.
+Studio opens in its own Linux window. Reopening presents the existing window.
+Closing the window keeps automatic controller support running; **Close the helper**
+in Help stops it. See [native app details](docs/NATIVE-APP.md).
+
+No sudo is needed for app installation. Pair Bluetooth controllers in Mint's Bluetooth settings first. USB controllers need a data cable.
 
 ## Controls
 
@@ -41,9 +44,17 @@ Dolphin loads each game's profile automatically. Mario Kart Wii and Brawl use Cl
 
 Launch DS games with **Launch game** in Studio to use their custom layout. Opening melonDS directly uses the shared layout. DS uses the lowest numbered connected player, then keyboard and mouse if no controller is connected.
 
-Dolphin starts fullscreen. melonDS starts fullscreen and fits both screens without stretching; F11 toggles fullscreen. Keyboard bindings and mouse touchscreen controls are kept.
+Dolphin starts fullscreen. melonDS has a screen-layout selector: one large screen, a large top screen with a small touchscreen, or both screens side by side. Tab swaps screens and F11 toggles fullscreen. Mario 64 DS defaults to one large screen; Bowser's Inside Story keeps both visible. Keyboard bindings and mouse touchscreen controls are kept.
 
-The current game list is in `src/games.json`. It contains 11 Wii games and 2 DS games and expects matching files under `~/Games/Nintendo/Wii` and `~/Games/Nintendo/DS`. No games, BIOS files or keys are included or downloaded.
+The paired diagrams show the emulated controller on the left and your real controller on the right. Green means assigned. Select either side to highlight matching controls in gold; selecting a button does not remap it. Use the binding selector or press-to-assign to change it.
+
+Studio follows recognized Dolphin titles and exact DS content IDs in X11 window titles. Stock melonDS does not publish a loaded ROM identity; automatic DS identification requires the optional [melonDS integration](docs/DS-DISCOVERY.md). The active-game card shows what it detected. Unknown titles and multiple games stay explicit; choose a game manually when detection is unavailable. Turn off **Follow the active game** to browse layouts yourself. Game detection needs `xprop` and an X11 session. It does not read game memory or guess from an old command line. The game catalog, controls and last detected game stay available offline.
+
+Saved changes wait until the whole emulator exits, including Dolphin's game-list window. A centered dialog explains this and changes to **Successful** only after the matching saved revision applies. Queued manual changes survive restarting Studio, even with auto-apply off. File errors stay errors and can be retried with **Use these controls**.
+
+For New Super Mario Bros. Wii: Xbox A jumps (Wii 2), X runs (Wii 1), B bubbles (Wii A), LT maps Wii B, RB shakes, and the right stick tilts. Keyboard: X jump, Z run, C bubble/A, V B, Space shake, Q/E tilt left/right, R/F tilt forward/back, arrows move, Enter pause. Existing custom shake/tilt mappings are kept during the old-preset upgrade.
+
+DS files are discovered under `~/Games/Nintendo/DS`, including subfolders, at startup and with **Refresh DS library**. Content hashes keep layouts stable across renames and separate same-titled ROMs. Missing files keep their settings but cannot launch. Scan issues are shown in Studio. The bundled Wii list and legacy DS entries remain for compatibility. No games, BIOS files or keys are included or downloaded.
 
 DS game launches support standard DS mode with built-in BIOS. Save paths must be ROM-adjacent or absolute. External BIOS, DSi mode and ambiguous relative save paths are rejected; open the shared emulator for those setups.
 
@@ -51,7 +62,7 @@ DS game launches support standard DS mode with built-in BIOS. Save paths must be
 
 Two Xbox One USB controllers were tested on the original laptop. PlayStation and Switch handling is implemented, but physical controllers were not available to test. USB roles stay with the port when a controller has no unique serial. Bluetooth roles use the paired device identity when available.
 
-DS and 3DS are single-player per instance. Touchscreens, microphones and Wii motion controls may still need the keyboard or mouse. Game compatibility and speed depend on your hardware and emulator settings. The latest DS input/scaling and fullscreen changes still need a native gameplay retest.
+DS and 3DS are single-player per instance. Touchscreens, microphones and Wii motion controls may still need the keyboard or mouse. Game compatibility and speed depend on your hardware and emulator settings. Native gameplay still needs a retest after a controller or display change. X11 fixture tests verify game switching and queued saves; they do not prove game compatibility or native graphics performance.
 
 ## Backups
 
@@ -69,6 +80,10 @@ cargo clippy --all-targets -- -D warnings
 node --test tests/input.test.mjs tests/ports.test.mjs
 ```
 
-`--inspect` lists controllers. `--export-plan --home PATH` prints proposed config files without writing them. `--apply-once --home PATH` applies to a test home. An alternate home shows a preview badge. `--background` starts without opening a browser.
+`--inspect` lists controllers. `--export-plan --home PATH` prints proposed config files without writing them. `--apply-once --home PATH` applies to a test home. An alternate home shows a preview badge. `--background` starts the engine without opening a window.
 
 The 3D renderer and web UI are bundled. SDL2 is loaded at runtime, so SDL development headers are not needed to compile. Third-party licenses are included under `vendor/`.
+
+## Mario 64 DS widescreen
+
+The widescreen patch requires USA Rev 1 / v1.1. Studio prefers the separately verified `Super Mario 64 DS (USA) (Rev 1) (Widescreen).nds` copy when present and checks its SHA-256 before launching. The original games stay intact. Launch it through Studio or the dedicated widescreen shortcut to use the 16:9 game config. See [patch notes](docs/widescreen.md) for the source and checks.
