@@ -1,3 +1,9 @@
+## 0.5.1
+
+Refuse a conflicting controller-engine port before initializing settings. Reuse an
+engine still starting when retrying the native window, and reject redirects during
+the local health check. Include the missing literal-path launch regression test.
+
 ## 0.5.0
 
 Open Controller Studio in its own Linux desktop window instead of a Firefox tab.

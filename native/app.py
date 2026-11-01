@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-VERSION = '0.5.0'
+VERSION = '0.5.1'
 
 
 def allowed_navigation(uri, origin):
@@ -24,6 +24,11 @@ def allowed_navigation(uri, origin):
                 and url.port == local.port and url.username is None and url.password is None)
     except (ValueError, TypeError):
         return False
+
+
+class NoRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        return None
 
 
 class Connection:
@@ -37,7 +42,7 @@ class Connection:
         self.process = None
         self.log = None
         # Never send the loopback session through a desktop HTTP proxy.
-        self.http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        self.http = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirects())
 
     def matches(self, health):
         return isinstance(health, dict) and health.get('app') == 'controller-studio' \
@@ -63,12 +68,13 @@ class Connection:
             if self.matches(health):
                 return
             raise RuntimeError('The Controller Studio port is already in use by another or older service. Close the old helper and reopen Studio.')
-        if not self.backend.is_file() or not os.access(self.backend, os.X_OK):
-            raise RuntimeError('The Controller Studio engine is missing. Reinstall the desktop app and engine together.')
-        self.log = tempfile.TemporaryFile(mode='w+b')
-        self.process = subprocess.Popen(
-            [str(self.backend), '--background', '--home', self.home, '--port', str(self.port)],
-            stdin=subprocess.DEVNULL, stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True)
+        if self.process is None or self.process.poll() is not None:
+            if not self.backend.is_file() or not os.access(self.backend, os.X_OK):
+                raise RuntimeError('The Controller Studio engine is missing. Reinstall the desktop app and engine together.')
+            self.log = tempfile.TemporaryFile(mode='w+b')
+            self.process = subprocess.Popen(
+                [str(self.backend), '--background', '--home', self.home, '--port', str(self.port)],
+                stdin=subprocess.DEVNULL, stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True)
         deadline = time.monotonic() + 12
         while time.monotonic() < deadline:
             health = self.health()

@@ -17,8 +17,8 @@ try:
 except (ImportError, ValueError):
     raise SystemExit('Install python3-gi and gir1.2-webkit2-4.1 through Mint Software Manager, then retry.')
 binary = repo/'target/release/controller-studio'
-if subprocess.check_output([str(binary), '--version'], text=True).strip() != '0.5.0':
-    raise SystemExit('Build the 0.5.0 engine first: cargo build --release --locked')
+if subprocess.check_output([str(binary), '--version'], text=True).strip() != '0.5.1':
+    raise SystemExit('Build the 0.5.1 engine first: cargo build --release --locked')
 home = Path.home()
 # Desktop Exec uses its own quoting rules, not a shell.
 engine = str(home/'.local/bin/controller-studio')

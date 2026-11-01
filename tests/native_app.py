@@ -1,7 +1,7 @@
 """Desktop boundary tests; fake local HTTP services never touch user settings."""
 import importlib.util,json,pathlib,tempfile,threading,unittest
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('studio_native',ROOT/'native/app.py')
 app=importlib.util.module_from_spec(spec);spec.loader.exec_module(app)
@@ -47,4 +47,28 @@ class NativeBoundary(unittest.TestCase):
   c=app.Connection('/missing-engine','/tmp/home',17645)
   with patch.object(c,'health',return_value=None):
    with self.assertRaisesRegex(RuntimeError,'engine is missing'):c.ensure_ready()
+ def test_retry_waits_for_owned_starting_engine(self):
+  c=app.Connection('/missing','/tmp/home',17645);owned=Mock();owned.poll.return_value=None;c.process=owned
+  good={'app':'controller-studio','version':app.VERSION,'home':'/tmp/home'}
+  with patch.object(c,'health',side_effect=[None,good]),patch.object(app.subprocess,'Popen') as spawn:
+   c.ensure_ready();spawn.assert_not_called();self.assertIs(c.process,owned)
+ def test_health_never_follows_redirects(self):
+  reached=[]
+  class Target(BaseHTTPRequestHandler):
+   def do_GET(self):
+    reached.append(self.path);self.send_response(200);self.end_headers();self.wfile.write(b'{}')
+   def log_message(self,*args):pass
+  target=ThreadingHTTPServer(('127.0.0.1',0),Target)
+  class Redirect(BaseHTTPRequestHandler):
+   def do_GET(self):
+    self.send_response(302);self.send_header('Location',f'http://127.0.0.1:{target.server_port}/outside');self.end_headers()
+   def log_message(self,*args):pass
+  source=ThreadingHTTPServer(('127.0.0.1',0),Redirect)
+  threads=[threading.Thread(target=x.serve_forever,daemon=True) for x in [source,target]]
+  for t in threads:t.start()
+  try:
+   c=app.Connection('/missing','/tmp/home',source.server_port);self.assertEqual(c.health(),{});self.assertEqual(reached,[])
+  finally:
+   for x in [source,target]:x.shutdown();x.server_close()
+   for t in threads:t.join()
 if __name__=='__main__':unittest.main()

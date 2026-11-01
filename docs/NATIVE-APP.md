@@ -43,3 +43,22 @@ view. Launching it again presented the same window. Closing after a temporary
 unsaved edit displayed the discard warning; the test edit was discarded without
 applying it. Existing system WebKitGTK packages were sufficient. Native hardware
 gameplay acceptance remains separate from this desktop-window check.
+
+## Pre-merge startup hardening (0.5.1)
+
+A clean GitHub checkout reproduced three failure cases: a retry could spawn a
+second starting engine; an occupied port was rejected only after settings
+initialization; and a health probe followed redirects. The retry now waits for its
+owned process, the Rust engine reserves its port before any settings work, and
+the probe refuses redirects. Each failure has a regression test.
+
+Validation on the isolated checkout passed 60 Rust tests, nine native boundary
+tests, Clippy, three JavaScript suites, real-engine lifecycle checks, HTTP
+authentication and malformed/oversized/slow request checks, dynamic DS discovery
+and launch tests, queued changes across restart, and desktop installer rollback.
+The installed 0.5.0 GTK window check remains the visual acceptance evidence;
+0.5.1 startup corrections were tested against the actual engine in disposable
+homes. No new physical gameplay or PlayStation/Switch hardware claim is made.
+
+The official RustSec advisory database reported no known vulnerabilities in the
+locked Rust dependencies during the review. Yanked-package checks were not run.

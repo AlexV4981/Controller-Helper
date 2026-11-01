@@ -193,6 +193,31 @@ fn run() -> Result<(), String> {
             .exec();
         return Err(format!("Could not open the native window: {error}"));
     }
+    let port = args
+        .iter()
+        .position(|a| a == "--port")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(17645);
+    let origin = format!("http://127.0.0.1:{port}");
+    // Reserve the port before scanning, recovery or any settings writes.
+    let server = if !args.iter().any(|a| {
+        [
+            "--inspect",
+            "--inspect-native",
+            "--export-plan",
+            "--apply-once",
+        ]
+        .contains(&a.as_str())
+    }) {
+        Some(Server::http(format!("127.0.0.1:{port}")).map_err(|e| {
+            format!(
+                "The helper port is already in use; an existing studio may already be open. {e}"
+            )
+        })?)
+    } else {
+        None
+    };
     let is_native = args.contains(&"--inspect-native".into());
     let mut input = match Input::with_native(is_native) {
         Ok(i) => Some(i),
@@ -255,21 +280,7 @@ fn run() -> Result<(), String> {
         println!("{}", json!({"receipt":receipt,"warnings":plan.warnings}));
         return Ok(());
     }
-    let port = args
-        .iter()
-        .position(|a| a == "--port")
-        .and_then(|i| args.get(i + 1))
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(17645);
-    let origin = format!("http://127.0.0.1:{port}");
-    let server = match Server::http(format!("127.0.0.1:{port}")) {
-        Ok(s) => s,
-        Err(e) => {
-            return Err(format!(
-                "The helper port is already in use; an existing studio may already be open. {e}"
-            ));
-        }
-    };
+    let server = server.ok_or("Controller server mode was not selected")?;
     let token = nonce()?;
     let cookie_name = format!("controller_studio_{port}");
     let cookie_value = format!("{cookie_name}={token}");
